@@ -5,6 +5,8 @@ import { createAdminJWT } from '@/lib/auth'
 import { cookies } from 'next/headers'
 import { z } from 'zod'
 
+// Admin login route
+
 const adminLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
