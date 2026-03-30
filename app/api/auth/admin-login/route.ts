@@ -5,8 +5,6 @@ import { createAdminJWT } from '@/lib/auth'
 import { cookies } from 'next/headers'
 import { z } from 'zod'
 
-// Admin login route
-
 const adminLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -25,7 +23,7 @@ export async function POST(request: NextRequest) {
 
     if (result.length === 0) {
       return NextResponse.json(
-        { error: 'Email ou senha inválida' },
+        { error: 'Email ou senha invalida' },
         { status: 401 }
       )
     }
@@ -35,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     if (!isPasswordValid) {
       return NextResponse.json(
-        { error: 'Email ou senha inválida' },
+        { error: 'Email ou senha invalida' },
         { status: 401 }
       )
     }
@@ -56,10 +54,10 @@ export async function POST(request: NextRequest) {
       message: 'Login realizado com sucesso',
     })
   } catch (error) {
-    console.error('[v0] Admin login error:', error)
+    console.error('Admin login error:', error)
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Dados inválidos' },
+        { error: 'Dados invalidos' },
         { status: 400 }
       )
     }
