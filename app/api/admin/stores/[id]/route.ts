@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 import { z } from 'zod'
 
@@ -27,11 +26,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Invalid admin token' }, { status: 401 })
     }
 
-    const store = await db(sql`
+    const store = await db`
       SELECT id, cpf, store_name, is_active, created_at
       FROM stores
       WHERE id = ${parseInt(id)} AND created_by = ${adminId}
-    `)
+    `
 
     if (store.length === 0) {
       return NextResponse.json({ error: 'Store not found' }, { status: 404 })
@@ -66,10 +65,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const storeId = parseInt(id)
 
     // Fetch current store first
-    const currentStore = await db(sql`
+    const currentStore = await db`
       SELECT * FROM stores
       WHERE id = ${storeId} AND created_by = ${adminId}
-    `)
+    `
 
     if (currentStore.length === 0) {
       return NextResponse.json({ error: 'Store not found' }, { status: 404 })
@@ -79,7 +78,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const store_name = data.store_name || store.store_name
     const is_active = data.is_active !== undefined ? data.is_active : store.is_active
 
-    const result = await db(sql`
+    const result = await db`
       UPDATE stores
       SET 
         store_name = ${store_name},
@@ -87,7 +86,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         updated_at = NOW()
       WHERE id = ${storeId} AND created_by = ${adminId}
       RETURNING id, cpf, store_name, is_active, created_at, updated_at
-    `)
+    `
 
     return NextResponse.json(result[0])
   } catch (error) {
@@ -115,10 +114,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: 'Invalid admin token' }, { status: 401 })
     }
 
-    await db(sql`
+    await db`
       DELETE FROM stores
       WHERE id = ${parseInt(id)} AND created_by = ${adminId}
-    `)
+    `
 
     return NextResponse.json({ success: true })
   } catch (error) {

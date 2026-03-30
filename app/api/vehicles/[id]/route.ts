@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 import { z } from 'zod'
 
@@ -31,10 +30,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const verified = await verify(token, secret)
     const storeId = verified.storeId as number
 
-    const vehicle = await db(sql`
+    const vehicle = await db`
       SELECT * FROM vehicles
       WHERE id = ${parseInt(id)} AND store_id = ${storeId}
-    `)
+    `
 
     if (vehicle.length === 0) {
       return NextResponse.json({ error: 'Vehicle not found' }, { status: 404 })
@@ -65,10 +64,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const vehicleId = parseInt(id)
     
     // Fetch current vehicle first
-    const currentVehicle = await db(sql`
+    const currentVehicle = await db`
       SELECT * FROM vehicles
       WHERE id = ${vehicleId} AND store_id = ${storeId}
-    `)
+    `
 
     if (currentVehicle.length === 0) {
       return NextResponse.json({ error: 'Vehicle not found' }, { status: 404 })
@@ -77,7 +76,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     // Merge with existing data
     const updatedVehicle = { ...currentVehicle[0], ...data }
 
-    const result = await db(sql`
+    const result = await db`
       UPDATE vehicles
       SET 
         plate = ${updatedVehicle.plate},
@@ -93,7 +92,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         updated_at = NOW()
       WHERE id = ${vehicleId} AND store_id = ${storeId}
       RETURNING *
-    `)
+    `
 
     return NextResponse.json(result[0])
   } catch (error) {
@@ -117,10 +116,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const verified = await verify(token, secret)
     const storeId = verified.storeId as number
 
-    await db(sql`
+    await db`
       DELETE FROM vehicles
       WHERE id = ${parseInt(id)} AND store_id = ${storeId}
-    `)
+    `
 
     return NextResponse.json({ success: true })
   } catch (error) {

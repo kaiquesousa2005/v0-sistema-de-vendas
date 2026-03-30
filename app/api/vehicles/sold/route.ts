@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
@@ -16,11 +15,11 @@ export async function GET(request: NextRequest) {
     const verified = await verify(token, secret)
     const storeId = verified.storeId as number
 
-    const vehicles = await db(sql`
+    const vehicles = await db`
       SELECT * FROM vehicles
       WHERE store_id = ${storeId} AND status = 'vendido'
       ORDER BY sold_at DESC
-    `)
+    `
 
     return NextResponse.json(vehicles)
   } catch (error) {
@@ -43,12 +42,12 @@ export async function PUT(request: NextRequest) {
     const body = await request.json()
     const { vehicleId, saleValue } = body
 
-    const result = await db(sql`
+    const result = await db`
       UPDATE vehicles
       SET status = 'vendido', sale_value = ${saleValue}, sold_at = NOW(), updated_at = NOW()
       WHERE id = ${vehicleId} AND store_id = ${storeId}
       RETURNING *
-    `)
+    `
 
     if (result.length === 0) {
       return NextResponse.json({ error: 'Vehicle not found' }, { status: 404 })

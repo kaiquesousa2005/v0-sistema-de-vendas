@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
@@ -20,10 +19,10 @@ export async function DELETE(
     const verified = await verify(token, secret)
     const storeId = verified.storeId as number
 
-    await db(sql`
+    await db`
       DELETE FROM vehicle_expenses
       WHERE id = ${parseInt(expenseId)} AND vehicle_id = ${parseInt(id)} AND store_id = ${storeId}
-    `)
+    `
 
     return NextResponse.json({ success: true })
   } catch (error) {

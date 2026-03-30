@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
@@ -20,7 +19,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const result = await db(sql`
+    const result = await db`
       SELECT
         TO_CHAR(date, 'MM/YYYY') as month,
         SUM(value) as expenses
@@ -28,9 +27,9 @@ export async function GET(request: NextRequest) {
       WHERE store_id = ${storeId}
       AND date >= CURRENT_DATE - INTERVAL '12 months'
       GROUP BY TO_CHAR(date, 'MM/YYYY')
-      ORDER BY date DESC
+      ORDER BY MIN(date) DESC
       LIMIT 12
-    `)
+    `
 
     const chartData = result.reverse().map((row: any) => ({
       month: row.month,

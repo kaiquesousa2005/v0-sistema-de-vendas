@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
@@ -20,7 +19,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const result = await db(sql`
+    const result = await db`
       SELECT
         COUNT(*) as total_vehicles,
         COUNT(CASE WHEN status = 'em_estoque' THEN 1 END) as vehicles_in_stock,
@@ -29,7 +28,7 @@ export async function GET(request: NextRequest) {
         COALESCE((SELECT SUM(value) FROM vehicle_expenses WHERE store_id = ${storeId}), 0) as total_expenses
       FROM vehicles
       WHERE store_id = ${storeId}
-    `)
+    `
 
     const stats = result[0]
 

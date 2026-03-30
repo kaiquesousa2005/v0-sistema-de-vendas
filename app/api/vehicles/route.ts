@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 import { z } from 'zod'
 
@@ -30,11 +29,11 @@ export async function GET(request: NextRequest) {
     const verified = await verify(token, secret)
     const storeId = verified.storeId as number
 
-    const vehicles = await db(sql`
+    const vehicles = await db`
       SELECT * FROM vehicles
       WHERE store_id = ${storeId}
       ORDER BY created_at DESC
-    `)
+    `
 
     return NextResponse.json(vehicles)
   } catch (error) {
@@ -57,7 +56,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = vehicleSchema.parse(body)
 
-    const result = await db(sql`
+    const result = await db`
       INSERT INTO vehicles (
         store_id, type, plate, brand, model, version,
         manufacture_year, model_year, purchase_value, renavam, chassis
@@ -67,7 +66,7 @@ export async function POST(request: NextRequest) {
         ${data.purchase_value}, ${data.renavam}, ${data.chassis}
       )
       RETURNING *
-    `)
+    `
 
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {

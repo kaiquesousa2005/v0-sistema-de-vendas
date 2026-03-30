@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 import { verifyPassword } from '@/lib/hash'
 import { createAdminJWT } from '@/lib/auth'
@@ -16,11 +15,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { email, password } = adminLoginSchema.parse(body)
 
-    const result = await db(sql`
+    const result = await db`
       SELECT id, email, password_hash, name
       FROM admins
       WHERE email = ${email}
-    `)
+    `
 
     if (result.length === 0) {
       return NextResponse.json(

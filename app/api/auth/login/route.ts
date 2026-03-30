@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 import { verifyPassword } from '@/lib/hash'
 import { createJWT, setAuthCookie } from '@/lib/auth'
@@ -15,11 +14,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { cpf, password } = loginSchema.parse(body)
 
-    const result = await db(sql`
+    const result = await db`
       SELECT id, cpf, store_name, password_hash, is_active
       FROM stores
       WHERE cpf = ${cpf} AND is_active = true
-    `)
+    `
 
     if (result.length === 0) {
       return NextResponse.json(

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 import { hashPassword } from '@/lib/hash'
 import { z } from 'zod'
@@ -28,12 +27,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid admin token' }, { status: 401 })
     }
 
-    const stores = await db(sql`
+    const stores = await db`
       SELECT id, cpf, store_name, is_active, created_at
       FROM stores
       WHERE created_by = ${adminId}
       ORDER BY created_at DESC
-    `)
+    `
 
     return NextResponse.json(stores)
   } catch (error) {
@@ -62,11 +61,11 @@ export async function POST(request: NextRequest) {
 
     const hashedPassword = await hashPassword(password)
 
-    const result = await db(sql`
+    const result = await db`
       INSERT INTO stores (cpf, store_name, password_hash, created_by)
       VALUES (${cpf}, ${store_name}, ${hashedPassword}, ${adminId})
       RETURNING id, cpf, store_name, is_active, created_at
-    `)
+    `
 
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {

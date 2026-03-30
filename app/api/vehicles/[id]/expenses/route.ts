@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 import { z } from 'zod'
 
@@ -24,11 +23,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const verified = await verify(token, secret)
     const storeId = verified.storeId as number
 
-    const expenses = await db(sql`
+    const expenses = await db`
       SELECT * FROM vehicle_expenses
       WHERE vehicle_id = ${parseInt(id)} AND store_id = ${storeId}
       ORDER BY date DESC
-    `)
+    `
 
     return NextResponse.json(expenses)
   } catch (error) {
@@ -52,7 +51,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = await request.json()
     const data = expenseSchema.parse(body)
 
-    const result = await db(sql`
+    const result = await db`
       INSERT INTO vehicle_expenses (
         vehicle_id, store_id, description, value, date
       ) VALUES (
@@ -60,7 +59,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         ${data.date ? new Date(data.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
       )
       RETURNING *
-    `)
+    `
 
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {

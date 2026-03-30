@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jose'
-import { sql } from '@neondatabase/serverless'
 import { db } from '@/lib/db'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
@@ -20,14 +19,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const result = await db(sql`
+    const result = await db`
       SELECT
         status,
         COUNT(*) as count
       FROM vehicles
       WHERE store_id = ${storeId}
       GROUP BY status
-    `)
+    `
 
     const colors: { [key: string]: string } = {
       em_estoque: 'hsl(142 71% 45%)',
