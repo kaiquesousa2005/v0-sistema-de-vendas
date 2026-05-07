@@ -4,10 +4,11 @@ import { jwtVerify } from 'jose'
 import { hashPassword } from '@/lib/hash'
 import { z } from 'zod'
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
+const sql = neon(process.env.DATABASE_URL!)
+const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
 
-const createStoreSchema = z.object({
-  cpf: z.string().min(11),
+const storeSchema = z.object({
+  cpf: z.string().min(11).max(14),
   store_name: z.string().min(1),
   password: z.string().min(6),
 })
@@ -24,49 +25,54 @@ async function getAdminId(request: NextRequest): Promise<number | null> {
 }
 
 export async function GET(request: NextRequest) {
-  const adminId = await getAdminId(request)
-  if (!adminId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   try {
-    const sql = neon(process.env.DATABASE_URL!)
+    const adminId = await getAdminId(request)
+    if (!adminId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const stores = await sql`
       SELECT id, cpf, store_name, is_active, created_at
       FROM stores
       WHERE created_by = ${adminId}
       ORDER BY created_at DESC
     `
+
     return NextResponse.json(stores)
-  } catch {
-    return NextResponse.json({ error: 'Erro ao buscar lojas' }, { status: 500 })
+  } catch (error) {
+    console.error('[v0] GET stores error:', error)
+    return NextResponse.json({ error: 'Failed to fetch stores' }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
-  const adminId = await getAdminId(request)
-  if (!adminId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   try {
-    const sql = neon(process.env.DATABASE_URL!)
-    const body = await request.json()
-    const { cpf, store_name, password } = createStoreSchema.parse(body)
-
-    const cleanCpf = cpf.replace(/\D/g, '')
-    const existing = await sql`SELECT id FROM stores WHERE cpf = ${cleanCpf}`
-    if (existing.length > 0) {
-      return NextResponse.json({ error: 'CPF já cadastrado' }, { status: 409 })
+    const adminId = await getAdminId(request)
+    if (!adminId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const body = await request.json()
+    const { cpf, store_name, password } = storeSchema.parse(body)
+
+    const cleanCpf = cpf.replace(/\D/g, '')
     const hashedPassword = await hashPassword(password)
+
     const result = await sql`
       INSERT INTO stores (cpf, store_name, password_hash, created_by)
       VALUES (${cleanCpf}, ${store_name}, ${hashedPassword}, ${adminId})
       RETURNING id, cpf, store_name, is_active, created_at
     `
+
     return NextResponse.json(result[0], { status: 201 })
-  } catch (error) {
+  } catch (error: unknown) {
+    console.error('[v0] POST store error:', error)
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid data', details: error.errors }, { status: 400 })
     }
-    return NextResponse.json({ error: 'Erro ao criar loja' }, { status: 500 })
+    if (error instanceof Error && error.message.includes('duplicate')) {
+      return NextResponse.json({ error: 'CPF already registered' }, { status: 409 })
+    }
+    return NextResponse.json({ error: 'Failed to create store' }, { status: 500 })
   }
 }
