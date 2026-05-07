@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
-import { verify } from 'jose'
+import { jwtVerify } from 'jose'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
@@ -8,8 +8,8 @@ async function getStoreId(request: NextRequest): Promise<number | null> {
   const token = request.cookies.get('auth-token')?.value
   if (!token) return null
   try {
-    const verified = await verify(token, secret)
-    return verified.storeId as number
+    const { payload } = await jwtVerify(token, secret)
+    return payload.storeId as number
   } catch {
     return null
   }

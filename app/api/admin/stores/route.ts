@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
-import { verify } from 'jose'
+import { jwtVerify } from 'jose'
 import { hashPassword } from '@/lib/hash'
 import { z } from 'zod'
 
@@ -16,8 +16,8 @@ async function getAdminId(request: NextRequest): Promise<number | null> {
   const token = request.cookies.get('admin-token')?.value
   if (!token) return null
   try {
-    const verified = await verify(token, secret)
-    return verified.adminId as number
+    const { payload } = await jwtVerify(token, secret)
+    return payload.adminId as number
   } catch {
     return null
   }
