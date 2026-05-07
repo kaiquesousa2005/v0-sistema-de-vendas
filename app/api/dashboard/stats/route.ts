@@ -1,25 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { neon } from '@neondatabase/serverless'
 import { verify } from 'jose'
-import { db } from '@/lib/db'
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
+const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
+
+async function getStoreId(request: NextRequest): Promise<number | null> {
+  const token = request.cookies.get('auth-token')?.value
+  if (!token) return null
+  try {
+    const verified = await verify(token, secret)
+    return verified.storeId as number
+  } catch {
+    return null
+  }
+}
 
 export async function GET(request: NextRequest) {
+  const storeId = await getStoreId(request)
+  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   try {
-    const token = request.cookies.get('auth-token')?.value
-
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const verified = await verify(token, secret)
-    const storeId = verified.storeId as number
-
-    if (!storeId) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
-
-    const result = await db`
+    const sql = neon(process.env.DATABASE_URL!)
+    const result = await sql`
       SELECT
         COUNT(*) as total_vehicles,
         COUNT(CASE WHEN status = 'em_estoque' THEN 1 END) as vehicles_in_stock,
@@ -29,21 +31,8 @@ export async function GET(request: NextRequest) {
       FROM vehicles
       WHERE store_id = ${storeId}
     `
-
-    const stats = result[0]
-
-    return NextResponse.json({
-      totalVehicles: parseInt(stats.total_vehicles),
-      vehiclesInStock: parseInt(stats.vehicles_in_stock),
-      vehiclesSold: parseInt(stats.vehicles_sold),
-      totalRevenue: parseFloat(stats.total_revenue),
-      totalExpenses: parseFloat(stats.total_expenses),
-    })
-  } catch (error) {
-    console.error('Error fetching stats:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch stats' },
-      { status: 500 }
-    )
+    return NextResponse.json(result[0])
+  } catch {
+    return NextResponse.json({ error: 'Erro ao buscar estatísticas' }, { status: 500 })
   }
 }

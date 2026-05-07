@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { neon } from '@neondatabase/serverless'
 import { verifyPassword } from '@/lib/hash'
 import { createAdminJWT } from '@/lib/auth'
 import { cookies } from 'next/headers'
 import { z } from 'zod'
-
-// Admin login route
 
 const adminLoginSchema = z.object({
   email: z.string().email(),
@@ -14,10 +12,12 @@ const adminLoginSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const sql = neon(process.env.DATABASE_URL!)
+
     const body = await request.json()
     const { email, password } = adminLoginSchema.parse(body)
 
-    const result = await db`
+    const result = await sql`
       SELECT id, email, password_hash, name
       FROM admins
       WHERE email = ${email}
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = await createAdminJWT(admin.email, admin.id)
-    
+
     const cookieStore = await cookies()
     cookieStore.set('admin-token', token, {
       httpOnly: true,
@@ -56,16 +56,9 @@ export async function POST(request: NextRequest) {
       message: 'Login realizado com sucesso',
     })
   } catch (error) {
-    console.error('[v0] Admin login error:', error)
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dados inválidos' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
     }
-    return NextResponse.json(
-      { error: 'Erro ao fazer login' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Erro ao fazer login' }, { status: 500 })
   }
 }

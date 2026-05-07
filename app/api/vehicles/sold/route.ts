@@ -1,61 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { neon } from '@neondatabase/serverless'
 import { verify } from 'jose'
-import { db } from '@/lib/db'
+import { z } from 'zod'
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
+const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
+
+async function getStoreId(request: NextRequest): Promise<number | null> {
+  const token = request.cookies.get('auth-token')?.value
+  if (!token) return null
+  try {
+    const verified = await verify(token, secret)
+    return verified.storeId as number
+  } catch {
+    return null
+  }
+}
 
 export async function GET(request: NextRequest) {
+  const storeId = await getStoreId(request)
+  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   try {
-    const token = request.cookies.get('auth-token')?.value
-
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const verified = await verify(token, secret)
-    const storeId = verified.storeId as number
-
-    const vehicles = await db`
+    const sql = neon(process.env.DATABASE_URL!)
+    const vehicles = await sql`
       SELECT * FROM vehicles
       WHERE store_id = ${storeId} AND status = 'vendido'
       ORDER BY sold_at DESC
     `
-
     return NextResponse.json(vehicles)
-  } catch (error) {
-    console.error('[v0] GET sold vehicles error:', error)
-    return NextResponse.json({ error: 'Failed to fetch sold vehicles' }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Erro ao buscar vendidos' }, { status: 500 })
   }
 }
 
-export async function PUT(request: NextRequest) {
+const soldSchema = z.object({
+  vehicleId: z.number().int(),
+  saleValue: z.number().positive(),
+})
+
+export async function POST(request: NextRequest) {
+  const storeId = await getStoreId(request)
+  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   try {
-    const token = request.cookies.get('auth-token')?.value
-
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const verified = await verify(token, secret)
-    const storeId = verified.storeId as number
-
+    const sql = neon(process.env.DATABASE_URL!)
     const body = await request.json()
-    const { vehicleId, saleValue } = body
+    const { vehicleId, saleValue } = soldSchema.parse(body)
 
-    const result = await db`
+    const result = await sql`
       UPDATE vehicles
       SET status = 'vendido', sale_value = ${saleValue}, sold_at = NOW(), updated_at = NOW()
       WHERE id = ${vehicleId} AND store_id = ${storeId}
       RETURNING *
     `
-
     if (result.length === 0) {
-      return NextResponse.json({ error: 'Vehicle not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Veículo não encontrado' }, { status: 404 })
     }
-
     return NextResponse.json(result[0])
   } catch (error) {
-    console.error('[v0] PUT sold vehicle error:', error)
-    return NextResponse.json({ error: 'Failed to mark vehicle as sold' }, { status: 500 })
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
+    }
+    return NextResponse.json({ error: 'Erro ao marcar como vendido' }, { status: 500 })
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { neon } from '@neondatabase/serverless'
 import { verifyPassword } from '@/lib/hash'
 import { createJWT, setAuthCookie } from '@/lib/auth'
 import { z } from 'zod'
@@ -11,10 +11,12 @@ const loginSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const sql = neon(process.env.DATABASE_URL!)
+
     const body = await request.json()
     const { cpf, password } = loginSchema.parse(body)
 
-    const result = await db`
+    const result = await sql`
       SELECT id, cpf, store_name, password_hash, is_active
       FROM stores
       WHERE cpf = ${cpf} AND is_active = true
@@ -22,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     if (result.length === 0) {
       return NextResponse.json(
-        { error: 'Credenciais inválidas' },
+        { error: 'CPF ou senha inválida, ou loja inativa' },
         { status: 401 }
       )
     }
@@ -32,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     if (!isPasswordValid) {
       return NextResponse.json(
-        { error: 'Credenciais inválidas' },
+        { error: 'CPF ou senha inválida' },
         { status: 401 }
       )
     }
@@ -47,19 +49,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Login realizado com sucesso',
+      message: `Bem-vindo, ${store.store_name}!`,
     })
   } catch (error) {
-    console.error('[v0] Login error:', error)
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dados inválidos' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
     }
-    return NextResponse.json(
-      { error: 'Erro ao fazer login' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Erro ao fazer login' }, { status: 500 })
   }
 }

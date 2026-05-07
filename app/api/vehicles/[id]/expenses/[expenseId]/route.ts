@@ -1,32 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { neon } from '@neondatabase/serverless'
 import { verify } from 'jose'
-import { db } from '@/lib/db'
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
+const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
+
+async function getStoreId(request: NextRequest): Promise<number | null> {
+  const token = request.cookies.get('auth-token')?.value
+  if (!token) return null
+  try {
+    const verified = await verify(token, secret)
+    return verified.storeId as number
+  } catch {
+    return null
+  }
+}
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; expenseId: string }> }
 ) {
+  const storeId = await getStoreId(request)
+  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id, expenseId } = await params
+
   try {
-    const { id, expenseId } = await params
-    const token = request.cookies.get('auth-token')?.value
-
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const verified = await verify(token, secret)
-    const storeId = verified.storeId as number
-
-    await db`
+    const sql = neon(process.env.DATABASE_URL!)
+    await sql`
       DELETE FROM vehicle_expenses
       WHERE id = ${parseInt(expenseId)} AND vehicle_id = ${parseInt(id)} AND store_id = ${storeId}
     `
-
     return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('[v0] DELETE expense error:', error)
-    return NextResponse.json({ error: 'Failed to delete expense' }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Erro ao excluir gasto' }, { status: 500 })
   }
 }

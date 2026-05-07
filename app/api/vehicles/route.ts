@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { neon } from '@neondatabase/serverless'
 import { verify } from 'jose'
-import { db } from '@/lib/db'
 import { z } from 'zod'
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
+const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
 const vehicleSchema = z.object({
   type: z.enum(['carro', 'moto']),
@@ -18,45 +18,44 @@ const vehicleSchema = z.object({
   chassis: z.string().min(1),
 })
 
-export async function GET(request: NextRequest) {
+async function getStoreId(request: NextRequest): Promise<number | null> {
+  const token = request.cookies.get('auth-token')?.value
+  if (!token) return null
   try {
-    const token = request.cookies.get('auth-token')?.value
-
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const verified = await verify(token, secret)
-    const storeId = verified.storeId as number
+    return verified.storeId as number
+  } catch {
+    return null
+  }
+}
 
-    const vehicles = await db`
+export async function GET(request: NextRequest) {
+  const storeId = await getStoreId(request)
+  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  try {
+    const sql = neon(process.env.DATABASE_URL!)
+    const vehicles = await sql`
       SELECT * FROM vehicles
-      WHERE store_id = ${storeId}
+      WHERE store_id = ${storeId} AND status = 'em_estoque'
       ORDER BY created_at DESC
     `
-
     return NextResponse.json(vehicles)
-  } catch (error) {
-    console.error('[v0] GET vehicles error:', error)
-    return NextResponse.json({ error: 'Failed to fetch vehicles' }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Erro ao buscar veículos' }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
+  const storeId = await getStoreId(request)
+  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   try {
-    const token = request.cookies.get('auth-token')?.value
-
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const verified = await verify(token, secret)
-    const storeId = verified.storeId as number
-
+    const sql = neon(process.env.DATABASE_URL!)
     const body = await request.json()
     const data = vehicleSchema.parse(body)
 
-    const result = await db`
+    const result = await sql`
       INSERT INTO vehicles (
         store_id, type, plate, brand, model, version,
         manufacture_year, model_year, purchase_value, renavam, chassis
@@ -67,13 +66,11 @@ export async function POST(request: NextRequest) {
       )
       RETURNING *
     `
-
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {
-    console.error('[v0] POST vehicles error:', error)
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Invalid data' }, { status: 400 })
+      return NextResponse.json({ error: 'Dados inválidos', details: error.errors }, { status: 400 })
     }
-    return NextResponse.json({ error: 'Failed to create vehicle' }, { status: 500 })
+    return NextResponse.json({ error: 'Erro ao criar veículo' }, { status: 500 })
   }
 }
