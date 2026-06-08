@@ -52,7 +52,15 @@ export function VehiclesList() {
       const response = await fetch('/api/vehicles')
       if (response.ok) {
         const data = await response.json()
-        setVehicles(data.filter((v: Vehicle) => v.status !== 'vendido'))
+        const normalized = data
+          .filter((v: Vehicle) => v.status !== 'vendido')
+          .map((v: Vehicle) => ({
+            ...v,
+            purchase_value: Number(v.purchase_value) || 0,
+            manufacture_year: Number(v.manufacture_year),
+            model_year: Number(v.model_year),
+          }))
+        setVehicles(normalized)
       } else {
         toast.error('Erro ao buscar veículos')
       }
@@ -271,7 +279,7 @@ export function VehiclesList() {
               <div className="text-sm space-y-1">
                 <p><span className="font-medium">Versão:</span> {vehicle.version || 'N/A'}</p>
                 <p><span className="font-medium">Anos:</span> {vehicle.manufacture_year}/{vehicle.model_year}</p>
-                <p><span className="font-medium">Valor:</span> R$ {vehicle.purchase_value.toFixed(2)}</p>
+                <p><span className="font-medium">Valor:</span> R$ {(Number(vehicle.purchase_value) || 0).toFixed(2)}</p>
                 <p><span className="font-medium">RENAVAN:</span> {vehicle.renavam}</p>
                 <p><span className="font-medium">Chassis:</span> {vehicle.chassis}</p>
               </div>
@@ -286,7 +294,7 @@ export function VehiclesList() {
                     Gastos
                   </Button>
                 </Link>
-                <Button size="sm" variant="outline" onClick={() => handleMarkAsSold(vehicle.id, vehicle.purchase_value)}>
+                <Button size="sm" variant="outline" onClick={() => handleMarkAsSold(vehicle.id, Number(vehicle.purchase_value) || 0)}>
                   <TrendingUp className="w-4 h-4 mr-1" />
                   Vendido
                 </Button>
