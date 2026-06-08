@@ -1,7 +1,8 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
+import { JWT_SECRET } from '@/lib/session'
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
+const secret = JWT_SECRET
 
 export interface AuthPayload {
   storeId: number

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
+const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
-  const publicRoutes = ['/login', '/api/auth/login', '/api/auth/admin-login', '/api/seed']
+  const publicRoutes = ['/login', '/api/auth/login', '/api/auth/admin-login', '/api/auth/logout', '/api/seed']
   const adminRoutes = ['/admin']
   const storeRoutes = ['/dashboard', '/gastos', '/vendidos', '/veiculos']
 
@@ -21,11 +21,10 @@ export async function middleware(request: NextRequest) {
     if (!adminToken) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
-
     try {
       await jwtVerify(adminToken, secret)
       return NextResponse.next()
-    } catch (error) {
+    } catch {
       return NextResponse.redirect(new URL('/login', request.url))
     }
   }
@@ -34,11 +33,10 @@ export async function middleware(request: NextRequest) {
     if (!token) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
-
     try {
       await jwtVerify(token, secret)
       return NextResponse.next()
-    } catch (error) {
+    } catch {
       return NextResponse.redirect(new URL('/login', request.url))
     }
   }

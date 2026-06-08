@@ -4,8 +4,7 @@ import { jwtVerify } from 'jose'
 import { hashPassword } from '@/lib/hash'
 import { z } from 'zod'
 
-const sql = neon(process.env.DATABASE_URL!)
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key')
+const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
 const storeSchema = z.object({
   cpf: z.string().min(11).max(14),
@@ -31,7 +30,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const stores = await sql`
+    const db = neon(process.env.DATABASE_URL!)
+    const stores = await db`
       SELECT id, cpf, store_name, is_active, created_at
       FROM stores
       WHERE created_by = ${adminId}
@@ -58,7 +58,8 @@ export async function POST(request: NextRequest) {
     const cleanCpf = cpf.replace(/\D/g, '')
     const hashedPassword = await hashPassword(password)
 
-    const result = await sql`
+    const db = neon(process.env.DATABASE_URL!)
+    const result = await db`
       INSERT INTO stores (cpf, store_name, password_hash, created_by)
       VALUES (${cleanCpf}, ${store_name}, ${hashedPassword}, ${adminId})
       RETURNING id, cpf, store_name, is_active, created_at
