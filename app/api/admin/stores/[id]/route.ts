@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { jwtVerify } from 'jose'
 import { z } from 'zod'
+import { hashPassword } from '@/lib/hash'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
 const updateStoreSchema = z.object({
   store_name: z.string().min(1).optional(),
   is_active: z.boolean().optional(),
+  password: z.string().min(6).optional(),
 })
 
 async function getAdminId(request: NextRequest): Promise<number | null> {
@@ -70,6 +72,21 @@ export async function PUT(
     const s = current[0]
     const store_name = data.store_name ?? s.store_name
     const is_active = data.is_active !== undefined ? data.is_active : s.is_active
+
+    // Se uma nova senha foi fornecida, atualiza o hash mantendo todos os dados da loja
+    if (data.password) {
+      const password_hash = await hashPassword(data.password)
+      const result = await sql`
+        UPDATE stores SET
+          store_name = ${store_name},
+          is_active = ${is_active},
+          password_hash = ${password_hash},
+          updated_at = NOW()
+        WHERE id = ${storeId} AND created_by = ${adminId}
+        RETURNING id, cpf, store_name, is_active, created_at, updated_at
+      `
+      return NextResponse.json(result[0])
+    }
 
     const result = await sql`
       UPDATE stores SET

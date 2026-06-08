@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { Plus, Edit, Trash2, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Plus, Edit, Trash2, Eye, EyeOff, Loader2, KeyRound } from 'lucide-react'
 
 interface Store {
   id: number
@@ -27,6 +27,12 @@ export function AdminPanel() {
     store_name: '',
     password: '',
   })
+
+  const [resetDialog, setResetDialog] = useState(false)
+  const [resetStore, setResetStore] = useState<Store | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
 
   useEffect(() => {
     fetchStores()
@@ -119,6 +125,46 @@ export function AdminPanel() {
     }
   }
 
+  const handleOpenReset = (store: Store) => {
+    setResetStore(store)
+    setNewPassword('')
+    setShowNewPassword(false)
+    setResetDialog(true)
+  }
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!resetStore) return
+    if (newPassword.length < 6) {
+      toast.error('A senha deve ter pelo menos 6 caracteres')
+      return
+    }
+    setIsResetting(true)
+
+    try {
+      const response = await fetch(`/api/admin/stores/${resetStore.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword }),
+      })
+
+      if (response.ok) {
+        toast.success('Senha redefinida com sucesso')
+        setResetDialog(false)
+        setResetStore(null)
+        setNewPassword('')
+      } else {
+        const data = await response.json()
+        toast.error(data.error || 'Erro ao redefinir senha')
+      }
+    } catch (error) {
+      console.error('[v0] Reset password error:', error)
+      toast.error('Erro ao redefinir senha')
+    } finally {
+      setIsResetting(false)
+    }
+  }
+
   const formatCPF = (value: string) => {
     const v = value.replace(/\D/g, '')
     if (v.length <= 3) return v
@@ -192,6 +238,48 @@ export function AdminPanel() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={resetDialog} onOpenChange={setResetDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Redefinir Senha</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            {resetStore && (
+              <p className="text-sm text-muted-foreground">
+                Definindo uma nova senha para a loja <span className="font-medium text-foreground">{resetStore.store_name}</span>. Os dados e o histórico da conta serão mantidos.
+              </p>
+            )}
+            <div>
+              <label className="text-sm font-medium">Nova Senha</label>
+              <div className="relative">
+                <Input
+                  type={showNewPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Mínimo de 6 caracteres"
+                  minLength={6}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2"
+                >
+                  {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setResetDialog(false)}>Cancelar</Button>
+              <Button type="submit" disabled={isResetting}>
+                {isResetting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Redefinir
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <div className="grid gap-4 md:grid-cols-2">
         {stores.map((store) => (
           <Card key={store.id}>
@@ -214,6 +302,17 @@ export function AdminPanel() {
                   Deletar
                 </Button>
               </div>
+              {store.is_active && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => handleOpenReset(store)}
+                  className="w-full"
+                >
+                  <KeyRound className="w-4 h-4 mr-1" />
+                  Redefinir Senha
+                </Button>
+              )}
             </CardContent>
           </Card>
         ))}
