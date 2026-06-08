@@ -31,7 +31,15 @@ export async function GET(request: NextRequest) {
       FROM vehicles
       WHERE store_id = ${storeId}
     `
-    return NextResponse.json(result[0])
+
+    const row = result[0]
+    return NextResponse.json({
+      totalVehicles: Number(row.total_vehicles ?? 0),
+      vehiclesInStock: Number(row.vehicles_in_stock ?? 0),
+      vehiclesSold: Number(row.vehicles_sold ?? 0),
+      totalRevenue: Number(row.total_revenue ?? 0),
+      totalExpenses: Number(row.total_expenses ?? 0),
+    })
   } catch {
     return NextResponse.json({ error: 'Erro ao buscar estatísticas' }, { status: 500 })
   }
