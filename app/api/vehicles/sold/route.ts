@@ -96,3 +96,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Erro ao marcar como vendido' }, { status: 500 })
   }
 }
+
+// DELETE - Reverte um veículo vendido de volta ao estoque
+export async function DELETE(request: NextRequest) {
+  const storeId = await getStoreId(request)
+  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  try {
+    const sql = neon(process.env.DATABASE_URL!)
+    const { vehicleId } = await request.json()
+
+    if (!vehicleId || typeof vehicleId !== 'number') {
+      return NextResponse.json({ error: 'ID do veículo inválido' }, { status: 400 })
+    }
+
+    const check = await sql`
+      SELECT id, status FROM vehicles
+      WHERE id = ${vehicleId} AND store_id = ${storeId}
+    `
+    if (check.length === 0) {
+      return NextResponse.json({ error: 'Veículo não encontrado' }, { status: 404 })
+    }
+    if (check[0].status !== 'vendido') {
+      return NextResponse.json({ error: 'Veículo não está marcado como vendido' }, { status: 409 })
+    }
+
+    const result = await sql`
+      UPDATE vehicles
+      SET status = 'em_estoque', sale_value = NULL, sold_at = NULL, updated_at = NOW()
+      WHERE id = ${vehicleId} AND store_id = ${storeId}
+      RETURNING *
+    `
+
+    return NextResponse.json(result[0])
+  } catch (error) {
+    console.error('[v0] DELETE sold error:', error)
+    return NextResponse.json({ error: 'Erro ao reverter venda' }, { status: 500 })
+  }
+}

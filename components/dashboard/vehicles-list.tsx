@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { Plus, Edit, Trash2, TrendingUp, FileText, Loader2, Car, Bike } from 'lucide-react'
+import { Plus, Edit, Trash2, TrendingUp, TrendingDown, FileText, Loader2, Car, Bike, DollarSign, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface Vehicle {
@@ -327,43 +327,89 @@ export function VehiclesList() {
 
       {/* Dialog Marcar como Vendido */}
       <Dialog open={soldDialog} onOpenChange={setSoldDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Marcar como Vendido</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <DollarSign className="w-4 h-4 text-primary" />
+              </div>
+              Registrar Venda
+            </DialogTitle>
           </DialogHeader>
-          {soldVehicle && (
-            <form onSubmit={handleMarkAsSold} className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Informe o valor de venda do veículo{' '}
-                <span className="font-semibold text-foreground">
-                  {soldVehicle.brand} {soldVehicle.model} ({soldVehicle.plate})
-                </span>.
-              </p>
-              <div className="rounded-md bg-muted p-3 text-sm space-y-1">
-                <p><span className="font-medium">Valor de compra:</span> R$ {soldVehicle.purchase_value.toFixed(2)}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Valor de Venda (R$) *</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={saleValue}
-                  onChange={(e) => setSaleValue(e.target.value)}
-                  placeholder="0,00"
-                  required
-                  autoFocus
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setSoldDialog(false)}>Cancelar</Button>
-                <Button type="submit" disabled={isMarkingSold}>
-                  {isMarkingSold && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Confirmar Venda
-                </Button>
-              </div>
-            </form>
-          )}
+          {soldVehicle && (() => {
+            const saleVal = parseFloat(saleValue) || 0
+            const profit = saleVal - soldVehicle.purchase_value
+            const isProfit = profit >= 0
+
+            return (
+              <form onSubmit={handleMarkAsSold} className="space-y-5">
+                {/* Info do veículo */}
+                <div className="rounded-lg border bg-muted/40 p-4 space-y-1">
+                  <div className="flex items-center gap-2">
+                    {soldVehicle.type === 'carro' ? <Car className="w-4 h-4 text-muted-foreground" /> : <Bike className="w-4 h-4 text-muted-foreground" />}
+                    <span className="font-semibold">{soldVehicle.brand} {soldVehicle.model}</span>
+                    {soldVehicle.version && <span className="text-muted-foreground text-sm">— {soldVehicle.version}</span>}
+                  </div>
+                  <p className="text-sm text-muted-foreground font-mono">{soldVehicle.plate} &bull; {soldVehicle.manufacture_year}/{soldVehicle.model_year}</p>
+                </div>
+
+                {/* Campo valor de venda */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Valor de Venda (R$) *</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={saleValue}
+                    onChange={(e) => setSaleValue(e.target.value)}
+                    placeholder="0,00"
+                    className="text-lg font-semibold h-11"
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                {/* Preview financeiro em tempo real */}
+                <div className="rounded-lg border divide-y text-sm">
+                  <div className="flex justify-between items-center px-4 py-2.5">
+                    <span className="text-muted-foreground">Valor de compra</span>
+                    <span className="font-medium">R$ {soldVehicle.purchase_value.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-4 py-2.5">
+                    <span className="text-muted-foreground">Valor de venda</span>
+                    <span className="font-medium text-green-600">R$ {saleVal > 0 ? saleVal.toFixed(2) : '—'}</span>
+                  </div>
+                  <div className={`flex justify-between items-center px-4 py-2.5 rounded-b-lg font-semibold ${isProfit ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                    <span className="flex items-center gap-1.5">
+                      {isProfit
+                        ? <TrendingUp className="w-4 h-4 text-green-600" />
+                        : <TrendingDown className="w-4 h-4 text-red-600" />
+                      }
+                      <span className={isProfit ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
+                        {isProfit ? 'Lucro estimado' : 'Prejuízo estimado'}
+                      </span>
+                    </span>
+                    <span className={isProfit ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
+                      {saleVal > 0 ? `${isProfit ? '+' : ''}R$ ${profit.toFixed(2)}` : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground">* O lucro real pode variar conforme os gastos registrados no veículo.</p>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button type="button" variant="outline" onClick={() => setSoldDialog(false)}>Cancelar</Button>
+                  <Button type="submit" disabled={isMarkingSold} className="gap-2">
+                    {isMarkingSold
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <CheckCircle2 className="w-4 h-4" />
+                    }
+                    Confirmar Venda
+                  </Button>
+                </div>
+              </form>
+            )
+          })()}
         </DialogContent>
       </Dialog>
 

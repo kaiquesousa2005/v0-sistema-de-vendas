@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/dashboard/header'
 import { toast } from 'sonner'
-import { Car, Bike, Edit, Loader2, TrendingUp, TrendingDown, DollarSign, ShoppingCart, Wrench } from 'lucide-react'
+import { Car, Bike, Edit, Loader2, TrendingUp, TrendingDown, DollarSign, ShoppingCart, Wrench, Undo2 } from 'lucide-react'
 
 interface SoldVehicle {
   id: number
@@ -36,6 +36,7 @@ export function SoldVehiclesList() {
   const [editingVehicle, setEditingVehicle] = useState<SoldVehicle | null>(null)
   const [newSaleValue, setNewSaleValue] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [revertingId, setRevertingId] = useState<number | null>(null)
 
   useEffect(() => {
     fetchSoldVehicles()
@@ -57,6 +58,31 @@ export function SoldVehiclesList() {
       toast.error('Erro de conexão ao buscar veículos vendidos')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleRevertToStock = async (vehicle: SoldVehicle) => {
+    if (!confirm(`Tem certeza que deseja voltar "${vehicle.brand} ${vehicle.model} (${vehicle.plate})" para o estoque? O valor de venda será removido.`)) return
+
+    setRevertingId(vehicle.id)
+    try {
+      const response = await fetch('/api/vehicles/sold', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vehicleId: vehicle.id }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        toast.error(data.error || 'Erro ao reverter venda')
+        return
+      }
+      toast.success(`${vehicle.brand} ${vehicle.model} voltou ao estoque`)
+      fetchSoldVehicles()
+    } catch (error) {
+      console.error('[v0] handleRevertToStock error:', error)
+      toast.error('Erro de conexão ao reverter venda')
+    } finally {
+      setRevertingId(null)
     }
   }
 
@@ -265,10 +291,25 @@ export function SoldVehiclesList() {
                     Vendido em {new Date(vehicle.sold_at).toLocaleDateString('pt-BR')}
                   </p>
 
-                  <Button size="sm" variant="outline" className="w-full" onClick={() => handleOpenEdit(vehicle)}>
-                    <Edit className="w-3 h-3 mr-1" />
-                    Editar Valor de Venda
-                  </Button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button size="sm" variant="outline" className="w-full" onClick={() => handleOpenEdit(vehicle)}>
+                      <Edit className="w-3 h-3 mr-1" />
+                      Editar Venda
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => handleRevertToStock(vehicle)}
+                      disabled={revertingId === vehicle.id}
+                    >
+                      {revertingId === vehicle.id
+                        ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        : <Undo2 className="w-3 h-3 mr-1" />
+                      }
+                      Voltar Estoque
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             )
