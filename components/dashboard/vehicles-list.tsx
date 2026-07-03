@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { Plus, Edit, Trash2, TrendingUp, FileText, Loader2 } from 'lucide-react'
+import { Plus, Edit, Trash2, TrendingUp, TrendingDown, FileText, Loader2, Car, Bike, DollarSign, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface Vehicle {
@@ -25,48 +26,61 @@ interface Vehicle {
   status: string
 }
 
+const emptyForm = {
+  type: 'carro',
+  plate: '',
+  brand: '',
+  model: '',
+  version: '',
+  manufacture_year: new Date().getFullYear(),
+  model_year: new Date().getFullYear(),
+  purchase_value: '',
+  renavam: '',
+  chassis: '',
+}
+
 export function VehiclesList() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Dialog de criar/editar
   const [openDialog, setOpenDialog] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [formData, setFormData] = useState({
-    type: 'carro',
-    plate: '',
-    brand: '',
-    model: '',
-    version: '',
-    manufacture_year: new Date().getFullYear(),
-    model_year: new Date().getFullYear(),
-    purchase_value: '',
-    renavam: '',
-    chassis: '',
-  })
+  const [formData, setFormData] = useState(emptyForm)
+
+  // Dialog de marcar como vendido
+  const [soldDialog, setSoldDialog] = useState(false)
+  const [soldVehicle, setSoldVehicle] = useState<Vehicle | null>(null)
+  const [saleValue, setSaleValue] = useState('')
+  const [isMarkingSold, setIsMarkingSold] = useState(false)
 
   useEffect(() => {
     fetchVehicles()
   }, [])
 
   const fetchVehicles = async () => {
+    setIsLoading(true)
     try {
       const response = await fetch('/api/vehicles')
-      if (response.ok) {
+      if (!response.ok) {
         const data = await response.json()
-        const normalized = data
-          .filter((v: Vehicle) => v.status !== 'vendido')
-          .map((v: Vehicle) => ({
-            ...v,
-            purchase_value: Number(v.purchase_value) || 0,
-            manufacture_year: Number(v.manufacture_year),
-            model_year: Number(v.model_year),
-          }))
-        setVehicles(normalized)
-      } else {
-        toast.error('Erro ao buscar veículos')
+        toast.error(data.error || 'Erro ao buscar veículos')
+        return
       }
+      const data = await response.json()
+      const normalized = data
+        .filter((v: Vehicle) => v.status !== 'vendido')
+        .map((v: Vehicle) => ({
+          ...v,
+          purchase_value: Number(v.purchase_value) || 0,
+          manufacture_year: Number(v.manufacture_year),
+          model_year: Number(v.model_year),
+        }))
+      setVehicles(normalized)
     } catch (error) {
-      console.error('[v0] Fetch vehicles error:', error)
-      toast.error('Erro ao buscar veículos')
+      console.error('[v0] fetchVehicles error:', error)
+      toast.error('Erro de conexão ao buscar veículos')
     } finally {
       setIsLoading(false)
     }
@@ -89,33 +103,28 @@ export function VehiclesList() {
       })
     } else {
       setEditingId(null)
-      setFormData({
-        type: 'carro',
-        plate: '',
-        brand: '',
-        model: '',
-        version: '',
-        manufacture_year: new Date().getFullYear(),
-        model_year: new Date().getFullYear(),
-        purchase_value: '',
-        renavam: '',
-        chassis: '',
-      })
+      setFormData(emptyForm)
     }
     setOpenDialog(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
 
+    const purchaseVal = parseFloat(formData.purchase_value)
+    if (isNaN(purchaseVal) || purchaseVal <= 0) {
+      toast.error('Valor de compra deve ser maior que zero')
+      return
+    }
+
+    setIsSaving(true)
     try {
       const url = editingId ? `/api/vehicles/${editingId}` : '/api/vehicles'
       const method = editingId ? 'PUT' : 'POST'
 
       const payload = {
         ...formData,
-        purchase_value: parseFloat(formData.purchase_value),
+        purchase_value: purchaseVal,
         manufacture_year: parseInt(formData.manufacture_year.toString()),
         model_year: parseInt(formData.model_year.toString()),
       }
@@ -126,87 +135,114 @@ export function VehiclesList() {
         body: JSON.stringify(payload),
       })
 
-      if (response.ok) {
-        toast.success(editingId ? 'Veículo atualizado' : 'Veículo adicionado')
-        setOpenDialog(false)
-        fetchVehicles()
-      } else {
-        toast.error('Erro ao salvar veículo')
+      const data = await response.json()
+
+      if (!response.ok) {
+        toast.error(data.error || 'Erro ao salvar veículo')
+        return
       }
+
+      toast.success(editingId ? 'Veículo atualizado com sucesso' : 'Veículo adicionado com sucesso')
+      setOpenDialog(false)
+      fetchVehicles()
     } catch (error) {
-      console.error('[v0] Submit error:', error)
-      toast.error('Erro ao salvar veículo')
+      console.error('[v0] handleSubmit error:', error)
+      toast.error('Erro de conexão ao salvar veículo')
     } finally {
-      setIsLoading(false)
+      setIsSaving(false)
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Tem certeza que deseja excluir este veículo?')) return
+  const handleDelete = async (vehicle: Vehicle) => {
+    if (!confirm(`Tem certeza que deseja excluir o veículo ${vehicle.brand} ${vehicle.model} (${vehicle.plate})?`)) return
 
     try {
-      const response = await fetch(`/api/vehicles/${id}`, { method: 'DELETE' })
-      if (response.ok) {
-        toast.success('Veículo excluído')
-        fetchVehicles()
-      } else {
-        toast.error('Erro ao excluir veículo')
+      const response = await fetch(`/api/vehicles/${vehicle.id}`, { method: 'DELETE' })
+      const data = await response.json()
+      if (!response.ok) {
+        toast.error(data.error || 'Erro ao excluir veículo')
+        return
       }
+      toast.success('Veículo excluído com sucesso')
+      fetchVehicles()
     } catch (error) {
-      console.error('[v0] Delete error:', error)
-      toast.error('Erro ao excluir veículo')
+      console.error('[v0] handleDelete error:', error)
+      toast.error('Erro de conexão ao excluir veículo')
     }
   }
 
-  const handleMarkAsSold = async (id: number, purchaseValue: number) => {
-    const saleValue = prompt('Qual foi o valor de venda?', purchaseValue.toString())
-    if (!saleValue) return
+  const handleOpenSoldDialog = (vehicle: Vehicle) => {
+    setSoldVehicle(vehicle)
+    setSaleValue(vehicle.purchase_value.toString())
+    setSoldDialog(true)
+  }
 
+  const handleMarkAsSold = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!soldVehicle) return
+
+    const saleVal = parseFloat(saleValue)
+    if (isNaN(saleVal) || saleVal <= 0) {
+      toast.error('Informe um valor de venda válido maior que zero')
+      return
+    }
+
+    setIsMarkingSold(true)
     try {
       const response = await fetch('/api/vehicles/sold', {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicleId: id, saleValue: parseFloat(saleValue) }),
+        body: JSON.stringify({ vehicleId: soldVehicle.id, saleValue: saleVal }),
       })
 
-      if (response.ok) {
-        toast.success('Veículo marcado como vendido')
-        fetchVehicles()
-      } else {
-        toast.error('Erro ao marcar como vendido')
+      const data = await response.json()
+      if (!response.ok) {
+        toast.error(data.error || 'Erro ao marcar como vendido')
+        return
       }
+
+      toast.success(`${soldVehicle.brand} ${soldVehicle.model} marcado como vendido`)
+      setSoldDialog(false)
+      setSoldVehicle(null)
+      setSaleValue('')
+      fetchVehicles()
     } catch (error) {
-      console.error('[v0] Mark as sold error:', error)
-      toast.error('Erro ao marcar como vendido')
+      console.error('[v0] handleMarkAsSold error:', error)
+      toast.error('Erro de conexão ao marcar como vendido')
+    } finally {
+      setIsMarkingSold(false)
     }
   }
 
   if (isLoading && vehicles.length === 0) {
-    return <div className="text-center">Carregando veículos...</div>
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
-        <Button onClick={() => handleOpenDialog()} gap-2>
-          <Plus className="w-4 h-4" />
+        <Button onClick={() => handleOpenDialog()}>
+          <Plus className="w-4 h-4 mr-2" />
           Adicionar Veículo
         </Button>
       </div>
 
+      {/* Dialog Criar/Editar */}
       <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? 'Editar Veículo' : 'Novo Veículo'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium">Tipo</label>
-                <Select value={formData.type} onValueChange={(value) => setFormData({...formData, type: value})}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                <label className="text-sm font-medium">Tipo *</label>
+                <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="carro">Carro</SelectItem>
                     <SelectItem value="moto">Moto</SelectItem>
@@ -214,46 +250,74 @@ export function VehiclesList() {
                 </Select>
               </div>
               <div>
-                <label className="text-sm font-medium">Placa</label>
-                <Input value={formData.plate} onChange={(e) => setFormData({...formData, plate: e.target.value})} required />
+                <label className="text-sm font-medium">Placa *</label>
+                <Input
+                  value={formData.plate}
+                  onChange={(e) => setFormData({ ...formData, plate: e.target.value.toUpperCase() })}
+                  placeholder="ABC-1234"
+                  maxLength={8}
+                  required
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">Marca</label>
-                <Input value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})} required />
+                <label className="text-sm font-medium">Marca *</label>
+                <Input value={formData.brand} onChange={(e) => setFormData({ ...formData, brand: e.target.value })} required />
               </div>
               <div>
-                <label className="text-sm font-medium">Modelo</label>
-                <Input value={formData.model} onChange={(e) => setFormData({...formData, model: e.target.value})} required />
+                <label className="text-sm font-medium">Modelo *</label>
+                <Input value={formData.model} onChange={(e) => setFormData({ ...formData, model: e.target.value })} required />
               </div>
-              <div>
+              <div className="col-span-2">
                 <label className="text-sm font-medium">Versão</label>
-                <Input value={formData.version} onChange={(e) => setFormData({...formData, version: e.target.value})} />
+                <Input value={formData.version} onChange={(e) => setFormData({ ...formData, version: e.target.value })} placeholder="Opcional" />
               </div>
               <div>
-                <label className="text-sm font-medium">Ano Fabricação</label>
-                <Input type="number" value={formData.manufacture_year} onChange={(e) => setFormData({...formData, manufacture_year: parseInt(e.target.value)})} required />
+                <label className="text-sm font-medium">Ano Fabricação *</label>
+                <Input
+                  type="number"
+                  value={formData.manufacture_year}
+                  onChange={(e) => setFormData({ ...formData, manufacture_year: parseInt(e.target.value) })}
+                  min={1900}
+                  max={new Date().getFullYear() + 1}
+                  required
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">Ano Modelo</label>
-                <Input type="number" value={formData.model_year} onChange={(e) => setFormData({...formData, model_year: parseInt(e.target.value)})} required />
+                <label className="text-sm font-medium">Ano Modelo *</label>
+                <Input
+                  type="number"
+                  value={formData.model_year}
+                  onChange={(e) => setFormData({ ...formData, model_year: parseInt(e.target.value) })}
+                  min={1900}
+                  max={new Date().getFullYear() + 2}
+                  required
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">Valor Compra</label>
-                <Input type="number" step="0.01" value={formData.purchase_value} onChange={(e) => setFormData({...formData, purchase_value: e.target.value})} required />
+                <label className="text-sm font-medium">Valor de Compra (R$) *</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={formData.purchase_value}
+                  onChange={(e) => setFormData({ ...formData, purchase_value: e.target.value })}
+                  placeholder="0,00"
+                  required
+                />
               </div>
               <div>
-                <label className="text-sm font-medium">RENAVAN</label>
-                <Input value={formData.renavam} onChange={(e) => setFormData({...formData, renavam: e.target.value})} required />
+                <label className="text-sm font-medium">RENAVAN *</label>
+                <Input value={formData.renavam} onChange={(e) => setFormData({ ...formData, renavam: e.target.value })} required />
               </div>
-              <div>
-                <label className="text-sm font-medium">Chassis</label>
-                <Input value={formData.chassis} onChange={(e) => setFormData({...formData, chassis: e.target.value})} required />
+              <div className="col-span-2">
+                <label className="text-sm font-medium">Chassis *</label>
+                <Input value={formData.chassis} onChange={(e) => setFormData({ ...formData, chassis: e.target.value })} required />
               </div>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setOpenDialog(false)}>Cancelar</Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              <Button type="submit" disabled={isSaving}>
+                {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {editingId ? 'Atualizar' : 'Adicionar'}
               </Button>
             </div>
@@ -261,46 +325,136 @@ export function VehiclesList() {
         </DialogContent>
       </Dialog>
 
+      {/* Dialog Marcar como Vendido */}
+      <Dialog open={soldDialog} onOpenChange={setSoldDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <DollarSign className="w-4 h-4 text-primary" />
+              </div>
+              Registrar Venda
+            </DialogTitle>
+          </DialogHeader>
+          {soldVehicle && (() => {
+            const saleVal = parseFloat(saleValue) || 0
+            const profit = saleVal - soldVehicle.purchase_value
+            const isProfit = profit >= 0
+
+            return (
+              <form onSubmit={handleMarkAsSold} className="space-y-5">
+                {/* Info do veículo */}
+                <div className="rounded-lg border bg-muted/40 p-4 space-y-1">
+                  <div className="flex items-center gap-2">
+                    {soldVehicle.type === 'carro' ? <Car className="w-4 h-4 text-muted-foreground" /> : <Bike className="w-4 h-4 text-muted-foreground" />}
+                    <span className="font-semibold">{soldVehicle.brand} {soldVehicle.model}</span>
+                    {soldVehicle.version && <span className="text-muted-foreground text-sm">— {soldVehicle.version}</span>}
+                  </div>
+                  <p className="text-sm text-muted-foreground font-mono">{soldVehicle.plate} &bull; {soldVehicle.manufacture_year}/{soldVehicle.model_year}</p>
+                </div>
+
+                {/* Campo valor de venda */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Valor de Venda (R$) *</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={saleValue}
+                    onChange={(e) => setSaleValue(e.target.value)}
+                    placeholder="0,00"
+                    className="text-lg font-semibold h-11"
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                {/* Preview financeiro em tempo real */}
+                <div className="rounded-lg border divide-y text-sm">
+                  <div className="flex justify-between items-center px-4 py-2.5">
+                    <span className="text-muted-foreground">Valor de compra</span>
+                    <span className="font-medium">R$ {soldVehicle.purchase_value.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-4 py-2.5">
+                    <span className="text-muted-foreground">Valor de venda</span>
+                    <span className="font-medium text-green-600">R$ {saleVal > 0 ? saleVal.toFixed(2) : '—'}</span>
+                  </div>
+                  <div className={`flex justify-between items-center px-4 py-2.5 rounded-b-lg font-semibold ${isProfit ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                    <span className="flex items-center gap-1.5">
+                      {isProfit
+                        ? <TrendingUp className="w-4 h-4 text-green-600" />
+                        : <TrendingDown className="w-4 h-4 text-red-600" />
+                      }
+                      <span className={isProfit ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
+                        {isProfit ? 'Lucro estimado' : 'Prejuízo estimado'}
+                      </span>
+                    </span>
+                    <span className={isProfit ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
+                      {saleVal > 0 ? `${isProfit ? '+' : ''}R$ ${profit.toFixed(2)}` : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground">* O lucro real pode variar conforme os gastos registrados no veículo.</p>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button type="button" variant="outline" onClick={() => setSoldDialog(false)}>Cancelar</Button>
+                  <Button type="submit" disabled={isMarkingSold} className="gap-2">
+                    {isMarkingSold
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <CheckCircle2 className="w-4 h-4" />
+                    }
+                    Confirmar Venda
+                  </Button>
+                </div>
+              </form>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Lista de Veículos */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {vehicles.map((vehicle) => (
           <Card key={vehicle.id} className="flex flex-col">
             <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="text-lg">{vehicle.brand} {vehicle.model}</CardTitle>
-                  <CardDescription>{vehicle.plate}</CardDescription>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <CardTitle className="text-base truncate">{vehicle.brand} {vehicle.model}</CardTitle>
+                  <CardDescription className="font-mono">{vehicle.plate}</CardDescription>
                 </div>
-                <div className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                  {vehicle.type}
-                </div>
+                <Badge variant="outline" className="shrink-0 gap-1">
+                  {vehicle.type === 'carro' ? <Car className="w-3 h-3" /> : <Bike className="w-3 h-3" />}
+                  {vehicle.type === 'carro' ? 'Carro' : 'Moto'}
+                </Badge>
               </div>
             </CardHeader>
             <CardContent className="flex-1 space-y-3">
-              <div className="text-sm space-y-1">
-                <p><span className="font-medium">Versão:</span> {vehicle.version || 'N/A'}</p>
-                <p><span className="font-medium">Anos:</span> {vehicle.manufacture_year}/{vehicle.model_year}</p>
-                <p><span className="font-medium">Valor:</span> R$ {(Number(vehicle.purchase_value) || 0).toFixed(2)}</p>
-                <p><span className="font-medium">RENAVAN:</span> {vehicle.renavam}</p>
-                <p><span className="font-medium">Chassis:</span> {vehicle.chassis}</p>
+              <div className="text-sm space-y-1 text-muted-foreground">
+                {vehicle.version && <p><span className="font-medium text-foreground">Versão:</span> {vehicle.version}</p>}
+                <p><span className="font-medium text-foreground">Anos:</span> {vehicle.manufacture_year}/{vehicle.model_year}</p>
+                <p><span className="font-medium text-foreground">Compra:</span> R$ {(Number(vehicle.purchase_value) || 0).toFixed(2)}</p>
+                <p><span className="font-medium text-foreground">RENAVAN:</span> {vehicle.renavam}</p>
+                <p><span className="font-medium text-foreground">Chassis:</span> <span className="font-mono text-xs">{vehicle.chassis}</span></p>
               </div>
-              <div className="flex gap-2 pt-3 flex-wrap">
+              <div className="grid grid-cols-2 gap-2 pt-2">
                 <Button size="sm" variant="outline" onClick={() => handleOpenDialog(vehicle)}>
-                  <Edit className="w-4 h-4 mr-1" />
+                  <Edit className="w-3 h-3 mr-1" />
                   Editar
                 </Button>
-                <Link href={`/veiculos/${vehicle.id}/gastos`} className="flex-1">
+                <Link href={`/veiculos/${vehicle.id}/gastos`}>
                   <Button size="sm" variant="outline" className="w-full">
-                    <FileText className="w-4 h-4 mr-1" />
+                    <FileText className="w-3 h-3 mr-1" />
                     Gastos
                   </Button>
                 </Link>
-                <Button size="sm" variant="outline" onClick={() => handleMarkAsSold(vehicle.id, Number(vehicle.purchase_value) || 0)}>
-                  <TrendingUp className="w-4 h-4 mr-1" />
-                  Vendido
+                <Button size="sm" className="col-span-2" onClick={() => handleOpenSoldDialog(vehicle)}>
+                  <TrendingUp className="w-3 h-3 mr-1" />
+                  Marcar como Vendido
                 </Button>
-                <Button size="sm" variant="destructive" onClick={() => handleDelete(vehicle.id)}>
-                  <Trash2 className="w-4 h-4 mr-1" />
-                  Deletar
+                <Button size="sm" variant="destructive" className="col-span-2" onClick={() => handleDelete(vehicle)}>
+                  <Trash2 className="w-3 h-3 mr-1" />
+                  Excluir
                 </Button>
               </div>
             </CardContent>
@@ -308,10 +462,11 @@ export function VehiclesList() {
         ))}
       </div>
 
-      {vehicles.length === 0 && (
+      {!isLoading && vehicles.length === 0 && (
         <Card className="text-center py-12">
           <CardContent>
-            <p className="text-muted-foreground">Nenhum veículo em estoque. Adicione um novo veículo para começar.</p>
+            <Car className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
+            <p className="text-muted-foreground">Nenhum veículo em estoque. Clique em &quot;Adicionar Veículo&quot; para começar.</p>
           </CardContent>
         </Card>
       )}
