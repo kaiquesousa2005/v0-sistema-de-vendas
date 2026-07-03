@@ -15,7 +15,7 @@ import {
 import {
   ArrowLeft, Plus, Pencil, Trash2, Loader2, AlertTriangle, History,
 } from 'lucide-react'
-import Header from '@/components/dashboard/header'
+import { Header } from '@/components/dashboard/header'
 
 const CATEGORIES = [
   'Bancos',
