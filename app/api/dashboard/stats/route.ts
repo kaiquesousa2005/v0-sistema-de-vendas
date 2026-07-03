@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         COUNT(CASE WHEN status = 'em_estoque' THEN 1 END) as vehicles_in_stock,
         COUNT(CASE WHEN status = 'vendido' THEN 1 END) as vehicles_sold,
         COALESCE(SUM(CASE WHEN status = 'vendido' THEN sale_value ELSE 0 END), 0) as total_revenue,
-        COALESCE((SELECT SUM(value) FROM vehicle_expenses WHERE store_id = ${storeId}), 0) as total_expenses
+        COALESCE((SELECT SUM(value) FROM vehicle_expenses WHERE store_id = ${storeId} AND is_deleted = false), 0) as total_expenses
       FROM vehicles
       WHERE store_id = ${storeId}
     `
