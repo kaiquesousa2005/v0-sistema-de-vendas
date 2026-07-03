@@ -55,12 +55,21 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const data = vehicleSchema.parse(body)
 
+    // Verificar placa duplicada dentro da mesma loja
+    const existing = await sql`
+      SELECT id FROM vehicles
+      WHERE store_id = ${storeId} AND UPPER(plate) = UPPER(${data.plate})
+    `
+    if (existing.length > 0) {
+      return NextResponse.json({ error: 'Já existe um veículo com essa placa cadastrado.' }, { status: 409 })
+    }
+
     const result = await sql`
       INSERT INTO vehicles (
         store_id, type, plate, brand, model, version,
         manufacture_year, model_year, purchase_value, renavam, chassis
       ) VALUES (
-        ${storeId}, ${data.type}, ${data.plate}, ${data.brand}, ${data.model},
+        ${storeId}, ${data.type}, ${data.plate.toUpperCase()}, ${data.brand}, ${data.model},
         ${data.version || null}, ${data.manufacture_year}, ${data.model_year},
         ${data.purchase_value}, ${data.renavam}, ${data.chassis}
       )
