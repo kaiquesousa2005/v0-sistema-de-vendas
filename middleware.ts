@@ -8,7 +8,7 @@ export async function middleware(request: NextRequest) {
 
   const publicRoutes = ['/login', '/api/auth/login', '/api/auth/admin-login', '/api/auth/logout', '/api/seed']
   const adminRoutes = ['/admin']
-  const storeRoutes = ['/dashboard', '/gastos', '/vendidos', '/veiculos']
+  const storeRoutes = ['/dashboard', '/gastos', '/vendidos', '/veiculos', '/clientes']
 
   if (publicRoutes.some(route => pathname.startsWith(route))) {
     return NextResponse.next()
