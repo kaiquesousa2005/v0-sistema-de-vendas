@@ -1,4 +1,3 @@
-import { Header } from '@/components/dashboard/header'
 import { VehicleExpenses } from '@/components/dashboard/vehicle-expenses'
 
 export const metadata = {
@@ -11,12 +10,5 @@ export default function VehicleGastosPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="container mx-auto px-4 py-8">
-        <VehicleExpenses params={params} />
-      </main>
-    </div>
-  )
+  return <VehicleExpenses params={params} />
 }

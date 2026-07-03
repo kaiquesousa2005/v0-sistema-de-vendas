@@ -5,73 +5,74 @@ import { z } from 'zod'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
+const VALID_CATEGORIES = [
+  'Bancos', 'Peças/Acessorio', 'Serviço Mecanico', 'Serviço Eletrico',
+  'Pintura', 'Polimento', 'IPVA', 'Documentação', 'Combustivel', 'Outros'
+] as const
+
 const expenseSchema = z.object({
   description: z.string().min(1),
+  category: z.enum(VALID_CATEGORIES as unknown as [string, ...string[]]),
   value: z.number().positive(),
   date: z.string().optional(),
 })
 
-async function getStoreId(request: NextRequest): Promise<number | null> {
+async function getStoreId(request: NextRequest): Promise<number> {
   const token = request.cookies.get('auth-token')?.value
-  if (!token) return null
-  try {
-    const { payload } = await jwtVerify(token, secret)
-    return payload.storeId as number
-  } catch {
-    return null
-  }
+  if (!token) throw new Error('Unauthorized')
+  const { payload } = await jwtVerify(token, secret)
+  return payload.storeId as number
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const storeId = await getStoreId(request)
-  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { id } = await params
-
+// GET - listar gastos ativos (não deletados)
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params
+    const storeId = await getStoreId(request)
     const sql = neon(process.env.DATABASE_URL!)
+
     const expenses = await sql`
       SELECT * FROM vehicle_expenses
-      WHERE vehicle_id = ${parseInt(id)} AND store_id = ${storeId}
-      ORDER BY date DESC
+      WHERE vehicle_id = ${parseInt(id)}
+        AND store_id = ${storeId}
+        AND is_deleted = false
+      ORDER BY date DESC, created_at DESC
     `
-    return NextResponse.json(expenses)
+
+    return NextResponse.json(expenses.map(e => ({
+      ...e,
+      value: Number(e.value),
+    })))
   } catch {
-    return NextResponse.json({ error: 'Erro ao buscar gastos' }, { status: 500 })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const storeId = await getStoreId(request)
-  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { id } = await params
-
+// GET deletados - rota separada via query param
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params
+    const storeId = await getStoreId(request)
     const sql = neon(process.env.DATABASE_URL!)
+
     const body = await request.json()
     const data = expenseSchema.parse(body)
 
-    const expDate = data.date
+    const dateStr = data.date
       ? new Date(data.date).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0]
 
     const result = await sql`
-      INSERT INTO vehicle_expenses (vehicle_id, store_id, description, value, date)
-      VALUES (${parseInt(id)}, ${storeId}, ${data.description}, ${data.value}, ${expDate})
+      INSERT INTO vehicle_expenses (vehicle_id, store_id, description, category, value, date)
+      VALUES (${parseInt(id)}, ${storeId}, ${data.description}, ${data.category}, ${data.value}, ${dateStr})
       RETURNING *
     `
-    return NextResponse.json(result[0], { status: 201 })
+
+    return NextResponse.json({ ...result[0], value: Number(result[0].value) }, { status: 201 })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 })
+      return NextResponse.json({ error: error.errors }, { status: 400 })
     }
-    return NextResponse.json({ error: 'Erro ao criar gasto' }, { status: 500 })
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 }
