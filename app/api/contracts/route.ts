@@ -6,6 +6,7 @@ import {
   CONTRACT_TYPES,
   buildCustomerAddress,
   buildVehicleLabel,
+  toIsoDate,
   type SaleContractData,
 } from '@/lib/contracts'
 
@@ -196,7 +197,7 @@ export async function POST(request: NextRequest) {
         cpf: String(customer.cpf ?? ''),
         rg: String(customer.rg ?? ''),
         phone: String(customer.phone ?? ''),
-        birth_date: customer.birth_date ? String(customer.birth_date).split('T')[0] : '',
+        birth_date: toIsoDate(customer.birth_date),
         address: buildCustomerAddress(customer),
       },
       vehicle: {

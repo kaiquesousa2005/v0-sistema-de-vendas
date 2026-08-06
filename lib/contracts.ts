@@ -109,24 +109,47 @@ const MONTHS_PT = [
 ]
 
 /**
+ * Normaliza para "AAAA-MM-DD".
+ *
+ * Colunas `date`/`timestamp` voltam do driver do Neon como objeto Date, e
+ * `String(new Date(...))` produz "Thu May 10 1990 ..." — que não é ISO e
+ * inclusive começa com "T", quebrando qualquer `split('T')`. Por isso o Date
+ * é convertido usando os componentes UTC, sem passar por texto.
+ */
+export function toIsoDate(value: string | Date | null | undefined): string {
+  if (!value) return ''
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return ''
+    const y = value.getUTCFullYear()
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0')
+    const d = String(value.getUTCDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  return String(value).split('T')[0]
+}
+
+/** Quebra "AAAA-MM-DD" em partes numéricas, sem deslocamento de fuso. */
+function dateParts(value: string | Date | null | undefined) {
+  const [y, m, d] = toIsoDate(value).split('-').map(Number)
+  if (!y || !m || !d || m < 1 || m > 12) return null
+  return { y, m, d }
+}
+
+/**
  * Converte "2026-08-06" em "06 DE AGOSTO DE 2026".
  * Faz o parse manual da string para não sofrer deslocamento de fuso horário.
  */
-export function longDatePt(iso: string | null | undefined): string {
-  if (!iso) return ''
-  const [datePart] = String(iso).split('T')
-  const [y, m, d] = datePart.split('-').map(Number)
-  if (!y || !m || !d) return ''
-  return `${String(d).padStart(2, '0')} DE ${MONTHS_PT[m - 1]} DE ${y}`
+export function longDatePt(iso: string | Date | null | undefined): string {
+  const p = dateParts(iso)
+  if (!p) return ''
+  return `${String(p.d).padStart(2, '0')} DE ${MONTHS_PT[p.m - 1]} DE ${p.y}`
 }
 
 /** Converte "2026-08-06" em "06/08/2026". */
-export function shortDatePt(iso: string | null | undefined): string {
-  if (!iso) return ''
-  const [datePart] = String(iso).split('T')
-  const [y, m, d] = datePart.split('-').map(Number)
-  if (!y || !m || !d) return ''
-  return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`
+export function shortDatePt(iso: string | Date | null | undefined): string {
+  const p = dateParts(iso)
+  if (!p) return ''
+  return `${String(p.d).padStart(2, '0')}/${String(p.m).padStart(2, '0')}/${p.y}`
 }
 
 export function formatCurrency(value: number | string | null | undefined): string {
