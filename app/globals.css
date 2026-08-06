@@ -123,3 +123,30 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Impressão de contratos: papel A4 sem margens do navegador,
+   sempre preto sobre branco e sem cortar cláusulas entre páginas. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm 0;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* Mantém as cores do fac-símile do contrato no papel */
+  .contract-sheet {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    box-shadow: none !important;
+  }
+
+  .break-inside-avoid,
+  .contract-sheet li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

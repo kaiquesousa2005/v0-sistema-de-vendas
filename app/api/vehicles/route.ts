@@ -44,11 +44,15 @@ export async function GET(request: NextRequest) {
     const search = (sp.get('search') ?? '').trim()
     const like = `%${search}%`
 
+    // Contratos podem ser gerados para veículos já marcados como vendidos,
+    // então `?includeSold=1` remove o filtro de estoque.
+    const includeSold = sp.get('includeSold') === '1'
+
     const [countRows, vehicles] = await Promise.all([
       sql`
         SELECT COUNT(*)::int AS total
         FROM vehicles
-        WHERE store_id = ${storeId} AND status = 'em_estoque'
+        WHERE store_id = ${storeId} AND (${includeSold} OR status = 'em_estoque')
           AND (
             ${search} = ''
             OR plate ILIKE ${like}
@@ -59,7 +63,7 @@ export async function GET(request: NextRequest) {
       `,
       sql`
         SELECT * FROM vehicles
-        WHERE store_id = ${storeId} AND status = 'em_estoque'
+        WHERE store_id = ${storeId} AND (${includeSold} OR status = 'em_estoque')
           AND (
             ${search} = ''
             OR plate ILIKE ${like}
