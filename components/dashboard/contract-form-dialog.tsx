@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { EntityPicker, type PickerItem } from '@/components/dashboard/entity-picker'
 import { ContractDocument } from '@/components/dashboard/contract-document'
+import { FitToWidth } from '@/components/dashboard/fit-to-width'
 import {
   CONTRACT_TYPES,
   CONTRACT_TYPE_KEYS,
@@ -509,9 +510,13 @@ export function ContractFormDialog({
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
+        showCloseButton={step !== 'preview'}
         className={
           step === 'preview'
-            ? 'max-h-[92vh] max-w-5xl overflow-y-auto'
+            ? // Prévia ocupa a tela inteira: sem limite de largura/altura, sem
+              // arredondamento e sem translate de centralização. O scroll fica
+              // na área do documento, não no diálogo.
+              'flex h-screen max-h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 !rounded-none border-0 p-0 top-0 left-0 sm:max-w-none'
             : 'max-h-[90vh] max-w-3xl overflow-y-auto'
         }
       >
@@ -569,45 +574,57 @@ export function ContractFormDialog({
           </>
         ) : step === 'preview' ? (
           <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+            {/* Barra de ações fixa no topo */}
+            <DialogHeader className="shrink-0 flex-row items-center justify-between gap-3 border-b border-border bg-background px-4 py-3 text-left sm:px-6">
+              <div className="flex min-w-0 items-center gap-2">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-7 p-0"
+                  className="h-8 w-8 shrink-0 p-0"
                   onClick={() => setStep('form')}
                   aria-label="Voltar para a edição"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
-                Prévia do contrato
-              </DialogTitle>
-              <DialogDescription>
-                Campos ainda não preenchidos aparecem como &quot;—&quot;. Nada foi salvo ainda.
-              </DialogDescription>
+                <div className="min-w-0">
+                  <DialogTitle className="text-sm">Prévia do contrato</DialogTitle>
+                  <DialogDescription className="truncate text-xs">
+                    Campos não preenchidos aparecem como &quot;—&quot;. Nada foi salvo ainda.
+                  </DialogDescription>
+                </div>
+              </div>
+
+              <div className="flex shrink-0 gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setStep('form')}>
+                  Voltar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => handleSubmit()}
+                  disabled={isSaving}
+                  className="gap-2"
+                >
+                  {isSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileSignature className="h-4 w-4" />
+                  )}
+                  {isEditing ? 'Salvar' : 'Gerar contrato'}
+                </Button>
+              </div>
             </DialogHeader>
 
-            <div className="overflow-x-auto rounded-lg border border-border bg-muted/40 p-3">
-              <ContractDocument
-                title={CONTRACT_TYPES[type].title}
-                data={preview?.data}
-                contractDate={preview?.contractDate ?? contractDate}
-              />
-            </div>
-
-            <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
-              <Button type="button" variant="outline" onClick={() => setStep('form')}>
-                Voltar para edição
-              </Button>
-              <Button type="button" onClick={() => handleSubmit()} disabled={isSaving} className="gap-2">
-                {isSaving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileSignature className="h-4 w-4" />
-                )}
-                {isEditing ? 'Salvar alterações' : 'Gerar contrato'}
-              </Button>
+            {/* Área rolável; FitToWidth encolhe a folha A4 em telas estreitas */}
+            <div className="min-h-0 flex-1 overflow-y-auto bg-muted/40 p-4 sm:p-6">
+              <FitToWidth>
+                <ContractDocument
+                  title={CONTRACT_TYPES[type].title}
+                  data={preview?.data}
+                  contractDate={preview?.contractDate ?? contractDate}
+                />
+              </FitToWidth>
             </div>
           </>
         ) : (

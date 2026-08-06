@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/dashboard/header'
 import { ContractDocument } from '@/components/dashboard/contract-document'
 import { ContractFormDialog } from '@/components/dashboard/contract-form-dialog'
+import { FitToWidth } from '@/components/dashboard/fit-to-width'
 import { CONTRACT_TYPES, shortDatePt, type ContractType } from '@/lib/contracts'
 import { ArrowLeft, Download, Loader2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
@@ -19,26 +20,30 @@ interface Contract {
   data: unknown
 }
 
-/**
- * Abre a caixa de impressão do navegador com o número do contrato como título,
- * que também é o nome sugerido do arquivo em "Salvar como PDF".
- */
-function printContract(fileName: string) {
-  const previousTitle = document.title
-  document.title = fileName
-  window.print()
-  // Restaura após o diálogo fechar para não afetar a navegação
-  window.setTimeout(() => {
-    document.title = previousTitle
-  }, 500)
-}
-
 export function ContractView({ contractId }: { contractId: number }) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [contract, setContract] = useState<Contract | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const sheetRef = useRef<HTMLDivElement>(null)
+
+  const handleDownload = useCallback(async () => {
+    const sheet = sheetRef.current?.querySelector<HTMLElement>('.contract-sheet')
+    if (!sheet || !contract) return
+
+    setIsDownloading(true)
+    try {
+      const { downloadContractPdf } = await import('@/lib/contract-pdf')
+      await downloadContractPdf(sheet, contract.contract_number)
+    } catch (error) {
+      console.error('[v0] download pdf error:', error)
+      toast.error('Erro ao gerar o PDF')
+    } finally {
+      setIsDownloading(false)
+    }
+  }, [contract])
 
   const loadContract = useCallback(async () => {
     try {
@@ -60,16 +65,17 @@ export function ContractView({ contractId }: { contractId: number }) {
     loadContract()
   }, [loadContract])
 
-  // `?print=1` (usado pelo botão "Baixar PDF" da listagem) já abre a impressão
+  // `?print=1` vem do botão "Baixar PDF" da listagem: baixa automaticamente
   useEffect(() => {
     if (!contract || searchParams.get('print') !== '1') return
 
-    const timer = window.setTimeout(() => printContract(contract.contract_number), 600)
-    // Limpa o parâmetro para não reimprimir ao voltar para a página
+    // Pequeno atraso para o cabeçalho e as fontes já estarem renderizados
+    const timer = window.setTimeout(() => handleDownload(), 700)
+    // Limpa o parâmetro para não baixar de novo ao voltar para a página
     router.replace(`/contratos/${contract.id}`)
 
     return () => window.clearTimeout(timer)
-  }, [contract, searchParams, router])
+  }, [contract, searchParams, router, handleDownload])
 
   if (isLoading) {
     return (
@@ -137,24 +143,28 @@ export function ContractView({ contractId }: { contractId: number }) {
               <Pencil className="h-4 w-4" />
               Editar
             </Button>
-            <Button
-              size="sm"
-              className="gap-2"
-              onClick={() => printContract(contract.contract_number)}
-            >
-              <Download className="h-4 w-4" />
-              Baixar PDF
+            <Button size="sm" className="gap-2" onClick={handleDownload} disabled={isDownloading}>
+              {isDownloading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {isDownloading ? 'Gerando PDF...' : 'Baixar PDF'}
             </Button>
           </div>
         </div>
       </div>
 
-      <main className="px-4 py-6 print:p-0">
-        <ContractDocument
-          title={config?.title ?? 'CONTRATO'}
-          data={contract.data}
-          contractDate={contract.contract_date}
-        />
+      {/* O PDF é gerado a partir do .contract-sheet dentro deste ref. O scale
+          do FitToWidth é apenas visual e não afeta a captura. */}
+      <main ref={sheetRef} className="px-4 py-6">
+        <FitToWidth>
+          <ContractDocument
+            title={config?.title ?? 'CONTRATO'}
+            data={contract.data}
+            contractDate={contract.contract_date}
+          />
+        </FitToWidth>
       </main>
 
       <ContractFormDialog
