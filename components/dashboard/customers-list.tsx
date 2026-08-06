@@ -92,6 +92,21 @@ function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('pt-BR')
 }
 
+type InputFieldProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
+  label: string
+  value: string
+  onChange: (v: string) => void
+}
+
+function InputField({ label, value, onChange, ...props }: InputFieldProps) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium text-foreground">{label}</label>
+      <Input value={value} onChange={e => onChange(e.target.value)} {...props} />
+    </div>
+  )
+}
+
 export function CustomersList() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -220,13 +235,6 @@ export function CustomersList() {
     c.full_name.toLowerCase().includes(search.toLowerCase()) ||
     c.cpf.includes(search.replace(/\D/g, '')) ||
     c.phone.includes(search)
-  )
-
-  const InputField = ({ label, value, onChange, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; value: string; onChange: (v: string) => void }) => (
-    <div className="space-y-1.5">
-      <label className="text-sm font-medium text-foreground">{label}</label>
-      <Input value={value} onChange={e => onChange(e.target.value)} {...props} />
-    </div>
   )
 
   return (
