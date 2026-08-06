@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -22,10 +21,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
-  UserPlus, Search, Edit, Trash2, Loader2, User,
-  Phone, Mail, FileText, Upload, CheckCircle2, XCircle,
-  ExternalLink, ChevronDown, ChevronUp
+  UserPlus, Search, Edit, Trash2, Loader2, Users,
+  FileCheck2, FileX2, Upload, Download, ChevronDown, X,
 } from 'lucide-react'
+import { Header } from '@/components/dashboard/header'
+import { PaginationBar } from '@/components/dashboard/pagination-bar'
+import { useDebounce } from '@/hooks/use-debounce'
+
+const PAGE_SIZE = 20
 
 interface Customer {
   id: number
@@ -42,14 +45,14 @@ interface Customer {
   address_city: string
   address_state: string
   address_zip: string
-  cnh_pathname: string | null
+  has_cnh: boolean
   created_at: string
 }
 
 const ESTADOS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS',
   'MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC',
-  'SP','SE','TO'
+  'SP','SE','TO',
 ]
 
 const emptyForm = {
@@ -66,7 +69,6 @@ const emptyForm = {
   address_city: '',
   address_state: '',
   address_zip: '',
-  cnh_pathname: '',
 }
 
 function formatCPF(v: string) {
@@ -88,8 +90,14 @@ function formatZip(v: string) {
 }
 
 function formatDate(dateStr: string) {
-  if (!dateStr) return ''
-  return new Date(dateStr).toLocaleDateString('pt-BR')
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('pt-BR')
+}
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/)
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
 }
 
 type InputFieldProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
@@ -101,113 +109,162 @@ type InputFieldProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChan
 function InputField({ label, value, onChange, ...props }: InputFieldProps) {
   return (
     <div className="space-y-1.5">
-      <label className="text-sm font-medium text-foreground">{label}</label>
-      <Input value={value} onChange={e => onChange(e.target.value)} {...props} />
+      <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} {...props} />
+    </div>
+  )
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="truncate text-sm text-foreground">{value || '—'}</p>
     </div>
   )
 }
 
 export function CustomersList() {
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [page, setPage] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
+
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 400)
+
   const [dialog, setDialog] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [cnhFile, setCnhFile] = useState<File | null>(null)
-  const [isUploadingCnh, setIsUploadingCnh] = useState(false)
+  const [editingHasCnh, setEditingHasCnh] = useState(false)
   const [form, setForm] = useState(emptyForm)
 
-  useEffect(() => { fetchCustomers() }, [])
-
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async (targetPage: number, term: string) => {
     setIsLoading(true)
     try {
-      const res = await fetch('/api/customers')
-      if (res.ok) setCustomers(await res.json())
-      else toast.error('Erro ao buscar clientes')
-    } catch {
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        limit: String(PAGE_SIZE),
+      })
+      if (term.trim()) params.set('search', term.trim())
+
+      const res = await fetch(`/api/customers?${params.toString()}`)
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao buscar clientes')
+        return
+      }
+      setCustomers(data.customers ?? [])
+      setTotal(Number(data.total) || 0)
+      setTotalPages(Number(data.totalPages) || 1)
+    } catch (error) {
+      console.error('[v0] fetchCustomers error:', error)
       toast.error('Erro de conexão')
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  // Volta para a primeira página sempre que o termo de busca muda
+  useEffect(() => { setPage(1) }, [debouncedSearch])
+
+  useEffect(() => {
+    fetchCustomers(page, debouncedSearch)
+  }, [page, debouncedSearch, fetchCustomers])
+
+  const reload = () => fetchCustomers(page, debouncedSearch)
 
   const handleOpenDialog = (customer?: Customer) => {
     if (customer) {
       setEditingId(customer.id)
+      setEditingHasCnh(customer.has_cnh)
       setForm({
         full_name: customer.full_name,
         birth_date: customer.birth_date?.slice(0, 10) ?? '',
         phone: customer.phone,
         email: customer.email ?? '',
         rg: customer.rg,
-        cpf: customer.cpf,
+        cpf: formatCPF(customer.cpf),
         address_street: customer.address_street,
         address_number: customer.address_number,
         address_complement: customer.address_complement ?? '',
         address_neighborhood: customer.address_neighborhood,
         address_city: customer.address_city,
         address_state: customer.address_state,
-        address_zip: customer.address_zip,
-        cnh_pathname: customer.cnh_pathname ?? '',
+        address_zip: formatZip(customer.address_zip),
       })
     } else {
       setEditingId(null)
+      setEditingHasCnh(false)
       setForm(emptyForm)
     }
     setCnhFile(null)
     setDialog(true)
   }
 
-  const handleCnhUpload = async (): Promise<string | null> => {
-    if (!cnhFile) return form.cnh_pathname || null
-    setIsUploadingCnh(true)
-    try {
-      const fd = new FormData()
-      fd.append('file', cnhFile)
-      const res = await fetch('/api/customers/cnh-upload', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Erro no upload da CNH'); return null }
-      return data.pathname
-    } catch {
-      toast.error('Erro ao fazer upload da CNH')
-      return null
-    } finally {
-      setIsUploadingCnh(false)
+  const handlePickCnh = (file: File | null) => {
+    if (!file) { setCnhFile(null); return }
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    if (!isPdf) {
+      toast.error('A CNH deve ser um arquivo PDF')
+      return
     }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('Arquivo muito grande. Máximo 8MB.')
+      return
+    }
+    setCnhFile(file)
+  }
+
+  const uploadCnh = async (): Promise<string | null> => {
+    if (!cnhFile) return null
+    const fd = new FormData()
+    fd.append('file', cnhFile)
+    const res = await fetch('/api/customers/cnh-upload', { method: 'POST', body: fd })
+    const data = await res.json()
+    if (!res.ok) {
+      toast.error(data.error || 'Erro no upload da CNH')
+      return null
+    }
+    return data.pathname as string
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSaving(true)
 
-    const cnhPathname = await handleCnhUpload()
-    if (cnhFile && !cnhPathname) { setIsSaving(false); return }
-
-    const payload = {
-      ...form,
-      cnh_pathname: cnhPathname ?? form.cnh_pathname ?? '',
-    }
-
-    const url = editingId ? `/api/customers/${editingId}` : '/api/customers'
-    const method = editingId ? 'PUT' : 'POST'
-
     try {
+      let cnhPathname: string | null = null
+      if (cnhFile) {
+        cnhPathname = await uploadCnh()
+        if (!cnhPathname) return
+      }
+
+      const payload: Record<string, string> = { ...form }
+      if (cnhPathname) payload.cnh_pathname = cnhPathname
+
+      const url = editingId ? `/api/customers/${editingId}` : '/api/customers'
       const res = await fetch(url, {
-        method,
+        method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
       const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Erro ao salvar cliente'); return }
-      toast.success(editingId ? 'Cliente atualizado!' : 'Cliente cadastrado!')
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao salvar cliente')
+        return
+      }
+
+      toast.success(editingId ? 'Cliente atualizado' : 'Cliente cadastrado')
       setDialog(false)
-      fetchCustomers()
-    } catch {
+      reload()
+    } catch (error) {
+      console.error('[v0] handleSubmit customer error:', error)
       toast.error('Erro de conexão')
     } finally {
       setIsSaving(false)
@@ -215,304 +272,416 @@ export function CustomersList() {
   }
 
   const handleDelete = async () => {
-    if (!deleteId) return
+    if (!deleteTarget) return
     setIsDeleting(true)
     try {
-      const res = await fetch(`/api/customers/${deleteId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/customers/${deleteTarget.id}`, { method: 'DELETE' })
       const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Erro ao excluir'); return }
+      if (!res.ok) {
+        toast.error(data.error || 'Erro ao excluir')
+        return
+      }
       toast.success('Cliente excluído')
-      setDeleteId(null)
-      fetchCustomers()
-    } catch {
+      setDeleteTarget(null)
+      // Se era o último item da página, recua uma página
+      if (customers.length === 1 && page > 1) setPage(page - 1)
+      else reload()
+    } catch (error) {
+      console.error('[v0] handleDelete customer error:', error)
       toast.error('Erro de conexão')
     } finally {
       setIsDeleting(false)
     }
   }
 
-  const filtered = customers.filter(c =>
-    c.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    c.cpf.includes(search.replace(/\D/g, '')) ||
-    c.phone.includes(search)
-  )
-
   return (
-    <div className="space-y-6">
-      {/* Header da página */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Clientes</h1>
-          <p className="text-muted-foreground text-sm">{customers.length} cliente{customers.length !== 1 ? 's' : ''} cadastrado{customers.length !== 1 ? 's' : ''}</p>
-        </div>
-        <Button onClick={() => handleOpenDialog()} className="gap-2">
-          <UserPlus className="w-4 h-4" />
-          Novo Cliente
-        </Button>
-      </div>
+    <div className="min-h-screen bg-background">
+      <Header />
 
-      {/* Busca */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Buscar por nome, CPF ou telefone..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
-
-      {/* Lista */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center">
-            <User className="w-8 h-8 text-muted-foreground" />
+      <main className="container mx-auto max-w-5xl px-4 py-6">
+        {/* Cabeçalho */}
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Users className="h-3.5 w-3.5" />
+              {total} cadastrado{total === 1 ? '' : 's'}
+            </p>
           </div>
-          <p className="font-medium text-muted-foreground">
-            {search ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado ainda'}
-          </p>
-          {!search && (
-            <Button variant="outline" onClick={() => handleOpenDialog()}>
-              Cadastrar primeiro cliente
-            </Button>
+          <Button onClick={() => handleOpenDialog()} className="gap-2">
+            <UserPlus className="h-4 w-4" />
+            Novo Cliente
+          </Button>
+        </div>
+
+        {/* Busca */}
+        <div className="relative mb-4">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome, CPF ou telefone..."
+            className="pl-9 pr-9"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Limpar busca"
+            >
+              <X className="h-4 w-4" />
+            </button>
           )}
         </div>
-      ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map(customer => {
-            const isExpanded = expandedId === customer.id
-            return (
-              <div key={customer.id} className="rounded-xl border bg-card shadow-sm overflow-hidden">
-                {/* Topo do card */}
-                <div className="flex items-start justify-between p-4 gap-2">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                      <User className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-semibold truncate">{customer.full_name}</p>
-                      <p className="text-xs text-muted-foreground font-mono">
-                        {customer.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge
-                    variant={customer.cnh_pathname ? 'default' : 'secondary'}
-                    className={`shrink-0 text-xs ${customer.cnh_pathname ? 'bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30' : 'opacity-60'}`}
-                  >
-                    {customer.cnh_pathname ? (
-                      <><CheckCircle2 className="w-3 h-3 mr-1" />CNH Salva</>
-                    ) : (
-                      <><XCircle className="w-3 h-3 mr-1" />Sem CNH</>
+
+        {/* Lista */}
+        {isLoading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Carregando clientes...</span>
+          </div>
+        ) : customers.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border py-16 text-center">
+            <Users className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="font-medium text-foreground">
+              {debouncedSearch ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado'}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {debouncedSearch ? 'Tente outro termo de busca.' : 'Cadastre o primeiro cliente para começar.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+              {customers.map((c) => {
+                const isOpen = expandedId === c.id
+                return (
+                  <li key={c.id} className="bg-card">
+                    {/* Linha compacta */}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(isOpen ? null : c.id)}
+                      className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-accent/50"
+                      aria-expanded={isOpen}
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                        {initials(c.full_name)}
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">{c.full_name}</span>
+                        <span className="block truncate font-mono text-xs text-muted-foreground">
+                          {formatCPF(c.cpf)} &middot; {formatPhone(c.phone)}
+                        </span>
+                      </span>
+
+                      {c.has_cnh ? (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:text-green-400">
+                          <FileCheck2 className="h-3 w-3" />
+                          <span className="hidden sm:inline">CNH salva</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          <FileX2 className="h-3 w-3" />
+                          <span className="hidden sm:inline">Sem CNH</span>
+                        </span>
+                      )}
+
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+
+                    {/* Detalhes */}
+                    {isOpen && (
+                      <div className="border-t border-border bg-muted/30 px-3 py-4">
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                          <DetailRow label="Nascimento" value={formatDate(c.birth_date)} />
+                          <DetailRow label="RG" value={c.rg} />
+                          <DetailRow label="E-mail" value={c.email ?? ''} />
+                          <DetailRow
+                            label="Endereço"
+                            value={`${c.address_street}, ${c.address_number}${c.address_complement ? ` - ${c.address_complement}` : ''}`}
+                          />
+                          <DetailRow label="Bairro" value={c.address_neighborhood} />
+                          <DetailRow
+                            label="Cidade / UF"
+                            value={`${c.address_city} / ${c.address_state}`}
+                          />
+                          <DetailRow label="CEP" value={formatZip(c.address_zip)} />
+                          <DetailRow label="Cadastrado em" value={formatDate(c.created_at)} />
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => handleOpenDialog(c)}>
+                            <Edit className="h-3.5 w-3.5" />
+                            Editar
+                          </Button>
+
+                          {c.has_cnh && (
+                            <Button asChild size="sm" variant="secondary" className="gap-1.5">
+                              <a href={`/api/customers/${c.id}/cnh?download=1`}>
+                                <Download className="h-3.5 w-3.5" />
+                                Baixar CNH
+                              </a>
+                            </Button>
+                          )}
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setDeleteTarget(c)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Excluir
+                          </Button>
+                        </div>
+                      </div>
                     )}
-                  </Badge>
-                </div>
+                  </li>
+                )
+              })}
+            </ul>
 
-                {/* Info rápida */}
-                <div className="px-4 pb-3 space-y-1 text-sm text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-3.5 h-3.5 shrink-0" />
-                    <span>{customer.phone}</span>
-                  </div>
-                  {customer.email && (
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{customer.email}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <FileText className="w-3.5 h-3.5 shrink-0" />
-                    <span>Nascimento: {formatDate(customer.birth_date)}</span>
-                  </div>
-                </div>
+            <PaginationBar
+              page={page}
+              totalPages={totalPages}
+              total={total}
+              limit={PAGE_SIZE}
+              onPageChange={setPage}
+              label="clientes"
+            />
+          </div>
+        )}
+      </main>
 
-                {/* Detalhes expansíveis */}
-                {isExpanded && (
-                  <div className="border-t px-4 py-3 space-y-1 text-sm text-muted-foreground bg-muted/30">
-                    <p><span className="font-medium text-foreground">RG:</span> {customer.rg}</p>
-                    <p><span className="font-medium text-foreground">Endereço:</span> {customer.address_street}, {customer.address_number}{customer.address_complement ? ` — ${customer.address_complement}` : ''}</p>
-                    <p><span className="font-medium text-foreground">Bairro:</span> {customer.address_neighborhood}</p>
-                    <p><span className="font-medium text-foreground">Cidade:</span> {customer.address_city} — {customer.address_state}</p>
-                    <p><span className="font-medium text-foreground">CEP:</span> {customer.address_zip.replace(/(\d{5})(\d{3})/, '$1-$2')}</p>
-                    {customer.cnh_pathname && (
-                      <a
-                        href={customer.cnh_pathname}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-primary hover:underline font-medium mt-1"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        Ver CNH
-                      </a>
-                    )}
-                  </div>
-                )}
-
-                {/* Rodapé do card */}
-                <div className="border-t p-3 flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex-1 text-xs gap-1"
-                    onClick={() => setExpandedId(isExpanded ? null : customer.id)}
-                  >
-                    {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    {isExpanded ? 'Menos' : 'Detalhes'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 text-xs gap-1"
-                    onClick={() => handleOpenDialog(customer)}
-                  >
-                    <Edit className="w-3.5 h-3.5" />
-                    Editar
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="flex-1 text-xs gap-1"
-                    onClick={() => setDeleteId(customer.id)}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Excluir
-                  </Button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Dialog cadastro/edição */}
+      {/* Dialog de cadastro/edição */}
       <Dialog open={dialog} onOpenChange={setDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-primary" />
-              {editingId ? 'Editar Cliente' : 'Novo Cliente'}
-            </DialogTitle>
+            <DialogTitle>{editingId ? 'Editar Cliente' : 'Novo Cliente'}</DialogTitle>
           </DialogHeader>
+
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Dados pessoais */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Dados Pessoais</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <section className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Dados pessoais
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <InputField label="Nome Completo *" value={form.full_name} onChange={v => setForm(f => ({ ...f, full_name: v }))} placeholder="Nome completo" required />
+                  <InputField
+                    label="Nome completo *"
+                    value={form.full_name}
+                    onChange={(v) => setForm({ ...form, full_name: v })}
+                    placeholder="João da Silva"
+                    required
+                  />
                 </div>
-                <InputField label="Data de Nascimento *" type="date" value={form.birth_date} onChange={v => setForm(f => ({ ...f, birth_date: v }))} required />
-                <InputField label="Telefone *" value={form.phone} onChange={v => setForm(f => ({ ...f, phone: formatPhone(v) }))} placeholder="(11) 99999-9999" required />
-                <InputField label="Email" type="email" value={form.email} onChange={v => setForm(f => ({ ...f, email: v }))} placeholder="email@exemplo.com" />
-                <InputField label="RG *" value={form.rg} onChange={v => setForm(f => ({ ...f, rg: v }))} placeholder="00.000.000-0" required />
+                <InputField
+                  label="Data de nascimento *"
+                  type="date"
+                  value={form.birth_date}
+                  onChange={(v) => setForm({ ...form, birth_date: v })}
+                  required
+                />
+                <InputField
+                  label="Telefone *"
+                  value={form.phone}
+                  onChange={(v) => setForm({ ...form, phone: formatPhone(v) })}
+                  placeholder="(11) 99999-9999"
+                  required
+                />
+                <InputField
+                  label="CPF *"
+                  value={form.cpf}
+                  onChange={(v) => setForm({ ...form, cpf: formatCPF(v) })}
+                  placeholder="000.000.000-00"
+                  disabled={!!editingId}
+                  required
+                />
+                <InputField
+                  label="RG *"
+                  value={form.rg}
+                  onChange={(v) => setForm({ ...form, rg: v })}
+                  placeholder="00.000.000-0"
+                  required
+                />
                 <div className="sm:col-span-2">
-                  <InputField label="CPF *" value={form.cpf} onChange={v => setForm(f => ({ ...f, cpf: formatCPF(v) }))} placeholder="000.000.000-00" required disabled={!!editingId} />
+                  <InputField
+                    label="E-mail"
+                    type="email"
+                    value={form.email}
+                    onChange={(v) => setForm({ ...form, email: v })}
+                    placeholder="cliente@email.com"
+                  />
                 </div>
               </div>
-            </div>
+            </section>
 
             {/* Endereço */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Endereço</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="sm:col-span-2">
-                  <InputField label="Rua / Avenida *" value={form.address_street} onChange={v => setForm(f => ({ ...f, address_street: v }))} placeholder="Nome da rua" required />
-                </div>
-                <InputField label="Número *" value={form.address_number} onChange={v => setForm(f => ({ ...f, address_number: v }))} placeholder="123" required />
-                <InputField label="Complemento" value={form.address_complement} onChange={v => setForm(f => ({ ...f, address_complement: v }))} placeholder="Apto, bloco..." />
-                <InputField label="Bairro *" value={form.address_neighborhood} onChange={v => setForm(f => ({ ...f, address_neighborhood: v }))} placeholder="Bairro" required />
-                <InputField label="Cidade *" value={form.address_city} onChange={v => setForm(f => ({ ...f, address_city: v }))} placeholder="Cidade" required />
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Estado *</label>
-                  <select
-                    value={form.address_state}
-                    onChange={e => setForm(f => ({ ...f, address_state: e.target.value }))}
+            <section className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Endereço
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-6">
+                <div className="sm:col-span-4">
+                  <InputField
+                    label="Rua *"
+                    value={form.address_street}
+                    onChange={(v) => setForm({ ...form, address_street: v })}
                     required
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                  >
-                    <option value="">UF</option>
-                    {ESTADOS.map(uf => <option key={uf} value={uf}>{uf}</option>)}
-                  </select>
+                  />
                 </div>
-                <InputField label="CEP *" value={form.address_zip} onChange={v => setForm(f => ({ ...f, address_zip: formatZip(v) }))} placeholder="00000-000" required />
+                <div className="sm:col-span-2">
+                  <InputField
+                    label="Número *"
+                    value={form.address_number}
+                    onChange={(v) => setForm({ ...form, address_number: v })}
+                    required
+                  />
+                </div>
+                <div className="sm:col-span-3">
+                  <InputField
+                    label="Complemento"
+                    value={form.address_complement}
+                    onChange={(v) => setForm({ ...form, address_complement: v })}
+                    placeholder="Apto 12"
+                  />
+                </div>
+                <div className="sm:col-span-3">
+                  <InputField
+                    label="Bairro *"
+                    value={form.address_neighborhood}
+                    onChange={(v) => setForm({ ...form, address_neighborhood: v })}
+                    required
+                  />
+                </div>
+                <div className="sm:col-span-3">
+                  <InputField
+                    label="Cidade *"
+                    value={form.address_city}
+                    onChange={(v) => setForm({ ...form, address_city: v })}
+                    required
+                  />
+                </div>
+                <div className="sm:col-span-1">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">UF *</label>
+                    <select
+                      value={form.address_state}
+                      onChange={(e) => setForm({ ...form, address_state: e.target.value })}
+                      required
+                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="">—</option>
+                      {ESTADOS.map((uf) => (
+                        <option key={uf} value={uf}>{uf}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <InputField
+                    label="CEP *"
+                    value={form.address_zip}
+                    onChange={(v) => setForm({ ...form, address_zip: formatZip(v) })}
+                    placeholder="00000-000"
+                    required
+                  />
+                </div>
               </div>
-            </div>
+            </section>
 
             {/* CNH */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">CNH</h3>
-              <div className="rounded-lg border border-dashed p-4 space-y-3">
-                {form.cnh_pathname && !cnhFile ? (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span className="text-sm font-medium">CNH já anexada</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <a href={form.cnh_pathname} target="_blank" rel="noopener noreferrer">
-                        <Button type="button" variant="ghost" size="sm" className="gap-1 text-xs">
-                          <ExternalLink className="w-3.5 h-3.5" /> Ver
-                        </Button>
-                      </a>
-                      <Button type="button" variant="ghost" size="sm" className="text-xs text-destructive" onClick={() => setForm(f => ({ ...f, cnh_pathname: '' }))}>
-                        Remover
-                      </Button>
-                    </div>
-                  </div>
-                ) : cnhFile ? (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-primary">
-                      <FileText className="w-4 h-4" />
-                      <span className="text-sm font-medium truncate max-w-[200px]">{cnhFile.name}</span>
-                    </div>
-                    <Button type="button" variant="ghost" size="sm" className="text-xs text-destructive" onClick={() => setCnhFile(null)}>
-                      Remover
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2 text-center">
-                    <Upload className="w-8 h-8 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">Arraste ou clique para anexar a CNH</p>
-                    <p className="text-xs text-muted-foreground">JPG, PNG, PDF — máximo 5MB</p>
-                  </div>
-                )}
-                <Input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,application/pdf"
-                  onChange={e => e.target.files?.[0] && setCnhFile(e.target.files[0])}
-                  className={cnhFile || form.cnh_pathname ? 'hidden' : ''}
-                />
-              </div>
-            </div>
+            <section className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                CNH (arquivo PDF)
+              </h3>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => setDialog(false)}>Cancelar</Button>
-              <Button type="submit" disabled={isSaving || isUploadingCnh} className="gap-2">
-                {(isSaving || isUploadingCnh) && <Loader2 className="w-4 h-4 animate-spin" />}
-                {editingId ? 'Salvar Alterações' : 'Cadastrar Cliente'}
+              {editingId && editingHasCnh && !cnhFile && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2">
+                  <span className="flex items-center gap-1.5 text-sm text-green-700 dark:text-green-400">
+                    <FileCheck2 className="h-4 w-4" />
+                    CNH já anexada
+                  </span>
+                  <Button asChild size="sm" variant="ghost" className="h-7 gap-1.5">
+                    <a href={`/api/customers/${editingId}/cnh?download=1`}>
+                      <Download className="h-3.5 w-3.5" />
+                      Baixar
+                    </a>
+                  </Button>
+                </div>
+              )}
+
+              <label className="flex cursor-pointer items-center gap-3 rounded-md border border-dashed border-input px-3 py-3 transition-colors hover:border-primary/50 hover:bg-accent/40">
+                <Upload className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 text-sm">
+                  {cnhFile ? (
+                    <span className="block truncate font-medium text-foreground">{cnhFile.name}</span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {editingHasCnh ? 'Substituir PDF da CNH' : 'Anexar PDF da CNH'}
+                    </span>
+                  )}
+                  <span className="mt-0.5 block text-xs text-muted-foreground">Somente PDF, até 8MB</span>
+                </span>
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="hidden"
+                  onChange={(e) => handlePickCnh(e.target.files?.[0] ?? null)}
+                />
+              </label>
+
+              {cnhFile && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1.5 text-muted-foreground"
+                  onClick={() => setCnhFile(null)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Remover arquivo selecionado
+                </Button>
+              )}
+            </section>
+
+            <div className="flex justify-end gap-2 border-t border-border pt-4">
+              <Button type="button" variant="outline" onClick={() => setDialog(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isSaving} className="gap-2">
+                {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editingId ? 'Salvar' : 'Cadastrar'}
               </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Alert de exclusão */}
-      <AlertDialog open={!!deleteId} onOpenChange={open => !open && setDeleteId(null)}>
+      {/* Confirmação de exclusão */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir cliente?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir cliente</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O cliente e sua CNH (se houver) serão removidos permanentemente.
+              {deleteTarget
+                ? `Os dados de "${deleteTarget.full_name}" e o PDF da CNH serão removidos permanentemente.`
+                : ''}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={isDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleDelete() }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
