@@ -2,13 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { jwtVerify } from 'jose'
 import { z } from 'zod'
-import {
-  CONTRACT_TYPES,
-  buildCustomerAddress,
-  buildVehicleLabel,
-  toIsoDate,
-  type SaleContractData,
-} from '@/lib/contracts'
+import { CONTRACT_TYPES } from '@/lib/contracts'
+import { buildSaleSnapshot, rememberStoreDefaults, saleSchema } from '@/lib/contract-snapshot'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
@@ -22,60 +17,6 @@ async function getStoreId(request: NextRequest): Promise<number | null> {
     return null
   }
 }
-
-const vehicleSnapshotSchema = z.object({
-  brand_model: z.string().trim().min(1, 'Marca/modelo obrigatório'),
-  renavam: z.string().trim().default(''),
-  plate: z.string().trim().default(''),
-  chassis: z.string().trim().default(''),
-  color: z.string().trim().default(''),
-  year: z.string().trim().default(''),
-  fuel: z.string().trim().default(''),
-})
-
-const saleSchema = z.object({
-  type: z.literal('venda'),
-  customer_id: z.coerce.number().int().positive('Selecione o comprador'),
-  vehicle_id: z.coerce.number().int().positive('Selecione o veículo'),
-  contract_date: z.string().min(10, 'Data do contrato obrigatória'),
-
-  // Cor / combustível / ano podem não existir no cadastro do veículo,
-  // por isso são enviados pelo formulário e sobrescrevem o snapshot.
-  vehicle_overrides: z
-    .object({
-      color: z.string().trim().default(''),
-      fuel: z.string().trim().default(''),
-    })
-    .default({ color: '', fuel: '' }),
-
-  trade_in: vehicleSnapshotSchema.nullable().default(null),
-
-  negotiation: z.object({
-    summary: z.string().trim().min(1, 'Descreva a forma de negociação'),
-    total_value: z.coerce.number().nonnegative('Valor inválido'),
-    observations: z.string().trim().default(''),
-  }),
-
-  delivery: z.object({
-    date: z.string().trim().default(''),
-    time: z.string().trim().default(''),
-  }),
-
-  exit_km: z.string().trim().default(''),
-
-  warranty: z
-    .object({
-      days: z.coerce.number().int().nonnegative().default(90),
-      km: z.coerce.number().int().nonnegative().default(5000),
-    })
-    .default({ days: 90, km: 5000 }),
-
-  store: z.object({
-    address: z.string().trim().default(''),
-    city: z.string().trim().default(''),
-    seller_name: z.string().trim().min(1, 'Informe o nome do vendedor'),
-  }),
-})
 
 export async function GET(request: NextRequest) {
   const storeId = await getStoreId(request)
@@ -162,96 +103,22 @@ export async function POST(request: NextRequest) {
     const data = saleSchema.parse(body)
     const sql = neon(process.env.DATABASE_URL!)
 
-    // Cliente e veículo são lidos do banco (fonte da verdade), sempre da própria loja
-    const [customerRows, vehicleRows, storeRows] = await Promise.all([
-      sql`
-        SELECT full_name, birth_date, phone, rg, cpf,
-               address_street, address_number, address_complement,
-               address_neighborhood, address_city, address_state, address_zip
-        FROM customers
-        WHERE id = ${data.customer_id} AND store_id = ${storeId}
-      `,
-      sql`
-        SELECT brand, model, version, plate, chassis, renavam,
-               manufacture_year, model_year, color, fuel, km
-        FROM vehicles
-        WHERE id = ${data.vehicle_id} AND store_id = ${storeId}
-      `,
-      sql`SELECT store_name, trade_name, address, city, seller_name FROM stores WHERE id = ${storeId}`,
-    ])
+    const { snapshot, customerName, vehicleLabel, vehicleIds } = await buildSaleSnapshot(
+      sql,
+      storeId,
+      data,
+    )
 
-    if (customerRows.length === 0) {
+    if (!customerName) {
       return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
     }
-    if (vehicleRows.length === 0) {
+    if (vehicleIds.length === 0) {
       return NextResponse.json({ error: 'Veículo não encontrado' }, { status: 404 })
     }
 
-    const customer = customerRows[0]
-    const vehicle = vehicleRows[0]
-    const store = storeRows[0] ?? {}
-
-    const snapshot: SaleContractData = {
-      buyer: {
-        name: String(customer.full_name).toUpperCase(),
-        cpf: String(customer.cpf ?? ''),
-        rg: String(customer.rg ?? ''),
-        phone: String(customer.phone ?? ''),
-        birth_date: toIsoDate(customer.birth_date),
-        address: buildCustomerAddress(customer),
-      },
-      vehicle: {
-        brand_model: [vehicle.brand, vehicle.model, vehicle.version]
-          .filter(Boolean)
-          .join(' ')
-          .toUpperCase(),
-        renavam: String(vehicle.renavam ?? ''),
-        plate: String(vehicle.plate ?? '').toUpperCase(),
-        chassis: String(vehicle.chassis ?? '').toUpperCase(),
-        color: (data.vehicle_overrides.color || vehicle.color || '').toUpperCase(),
-        year: `${vehicle.manufacture_year ?? ''}/${vehicle.model_year ?? ''}`,
-        fuel: (data.vehicle_overrides.fuel || vehicle.fuel || '').toUpperCase(),
-      },
-      trade_in: data.trade_in
-        ? {
-            brand_model: data.trade_in.brand_model.toUpperCase(),
-            renavam: data.trade_in.renavam,
-            plate: data.trade_in.plate.toUpperCase(),
-            chassis: data.trade_in.chassis.toUpperCase(),
-            color: data.trade_in.color.toUpperCase(),
-            year: data.trade_in.year,
-            fuel: data.trade_in.fuel.toUpperCase(),
-          }
-        : null,
-      negotiation: {
-        summary: data.negotiation.summary.toUpperCase(),
-        total_value: data.negotiation.total_value,
-        observations: data.negotiation.observations.toUpperCase(),
-      },
-      delivery: data.delivery,
-      exit_km: data.exit_km || String(vehicle.km ?? ''),
-      warranty: data.warranty,
-      store: {
-        // `trade_name` (nome fantasia) é o nome que aparece nas cláusulas de garantia
-        name: String(store.trade_name || store.store_name || '').toUpperCase(),
-        address: data.store.address || String(store.address ?? ''),
-        city: (data.store.city || String(store.city ?? '')).toUpperCase(),
-        seller_name: data.store.seller_name.toUpperCase(),
-      },
-    }
-
-    // Guarda os dados da loja para pré-preencher os próximos contratos
-    await sql`
-      UPDATE stores
-      SET address = ${snapshot.store.address || null},
-          city = ${snapshot.store.city || null},
-          seller_name = ${snapshot.store.seller_name || null}
-      WHERE id = ${storeId}
-    `
+    await rememberStoreDefaults(sql, storeId, snapshot.store)
 
     const prefix = CONTRACT_TYPES.venda.prefix
-    const customerName = String(customer.full_name).toUpperCase()
-    const vehicleLabel = buildVehicleLabel(vehicle).toUpperCase()
 
     // Numeração sequencial por loja/tipo. Em caso de corrida no índice único,
     // tenta novamente com o próximo número.
@@ -273,8 +140,8 @@ export async function POST(request: NextRequest) {
             store_id, type, contract_number, customer_id, vehicle_id,
             customer_name, vehicle_label, total_value, contract_date, data
           ) VALUES (
-            ${storeId}, 'venda', ${contractNumber}, ${data.customer_id}, ${data.vehicle_id},
-            ${customerName}, ${vehicleLabel}, ${data.negotiation.total_value},
+            ${storeId}, 'venda', ${contractNumber}, ${data.customer_id}, ${vehicleIds[0]},
+            ${customerName}, ${vehicleLabel}, ${snapshot.negotiation.total_value},
             ${data.contract_date}, ${JSON.stringify(snapshot)}::jsonb
           )
           RETURNING id, type, contract_number, customer_name, vehicle_label, total_value, contract_date

@@ -27,7 +27,7 @@ import {
   shortDatePt,
   type ContractType,
 } from '@/lib/contracts'
-import { FilePlus2, FileText, Loader2, Search, Trash2 } from 'lucide-react'
+import { Download, FilePlus2, FileText, Loader2, Pencil, Search, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface ContractRow {
@@ -56,6 +56,7 @@ export function ContractsList() {
   const [typeFilter, setTypeFilter] = useState<'' | ContractType>('')
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<ContractRow | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ContractRow | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -220,15 +221,35 @@ export function ContractsList() {
                   </p>
                 </button>
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => setDeleteTarget(contract)}
-                  aria-label={`Excluir contrato ${contract.contract_number}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex shrink-0 flex-col gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => setEditTarget(contract)}
+                    aria-label={`Editar contrato ${contract.contract_number}`}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => router.push(`/contratos/${contract.id}?print=1`)}
+                    aria-label={`Baixar PDF do contrato ${contract.contract_number}`}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => setDeleteTarget(contract)}
+                    aria-label={`Excluir contrato ${contract.contract_number}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </Card>
             ))}
           </div>
@@ -249,7 +270,18 @@ export function ContractsList() {
       <ContractFormDialog
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
-        onCreated={(id) => router.push(`/contratos/${id}`)}
+        onSaved={(id) => router.push(`/contratos/${id}`)}
+      />
+
+      {/* Edição in-place: mantém a listagem e recarrega ao salvar */}
+      <ContractFormDialog
+        open={editTarget !== null}
+        onOpenChange={(o) => !o && setEditTarget(null)}
+        contractId={editTarget?.id ?? null}
+        onSaved={() => {
+          setEditTarget(null)
+          loadContracts()
+        }}
       />
 
       <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>

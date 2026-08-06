@@ -61,6 +61,8 @@ export interface ContractParty {
 }
 
 export interface ContractVehicle {
+  /** Id do cadastro, quando o veículo veio do estoque (permite reeditar). */
+  vehicle_id?: number | null
   brand_model: string
   renavam: string
   plate: string
@@ -68,6 +70,8 @@ export interface ContractVehicle {
   color: string
   year: string
   fuel: string
+  /** KM do veículo neste contrato. */
+  km: string
 }
 
 export interface ContractStore {
@@ -77,11 +81,19 @@ export interface ContractStore {
   seller_name: string
 }
 
+/**
+ * Garantia do contrato de venda: fixa por regra da loja, não é editável.
+ * Vale o que ocorrer primeiro entre prazo e quilometragem.
+ */
+export const SALE_WARRANTY = { days: 90, daysText: 'NOVENTA', km: 5000 } as const
+
+/** Formato canônico usado pelo documento e pelo formulário. */
 export interface SaleContractData {
   buyer: ContractParty
-  vehicle: ContractVehicle
-  /** Veículo recebido como parte do pagamento (troca). */
-  trade_in: ContractVehicle | null
+  /** Veículos vendidos ao comprador (1 ou mais). */
+  vehicles: ContractVehicle[]
+  /** Veículos recebidos como parte do pagamento (troca). */
+  trade_ins: ContractVehicle[]
   negotiation: {
     /** Ex.: "AVISTA + CARRO + BOLETO" */
     summary: string
@@ -92,13 +104,79 @@ export interface SaleContractData {
     date: string
     time: string
   }
-  /** KM que o veículo tem ao sair da loja. */
-  exit_km: string
-  warranty: {
-    days: number
-    km: number
-  }
   store: ContractStore
+}
+
+/* ---------- Normalização ----------
+   Contratos criados antes do suporte a múltiplos veículos guardaram
+   `vehicle`/`trade_in` (objetos únicos) e `exit_km` no topo do snapshot.
+   `normalizeSaleData` converte qualquer um dos formatos — e também dados
+   parciais da prévia — para o formato canônico, sem lançar erro. */
+
+function str(value: unknown): string {
+  return value == null ? '' : String(value)
+}
+
+function normalizeVehicle(raw: unknown, fallbackKm = ''): ContractVehicle {
+  const v = (raw ?? {}) as Record<string, unknown>
+  const id = v.vehicle_id == null ? null : Number(v.vehicle_id) || null
+  return {
+    vehicle_id: id,
+    brand_model: str(v.brand_model),
+    renavam: str(v.renavam),
+    plate: str(v.plate),
+    chassis: str(v.chassis),
+    color: str(v.color),
+    year: str(v.year),
+    fuel: str(v.fuel),
+    km: str(v.km) || fallbackKm,
+  }
+}
+
+export function normalizeSaleData(raw: unknown): SaleContractData {
+  const d = (raw ?? {}) as Record<string, unknown>
+  const legacyExitKm = str(d.exit_km)
+
+  let vehicles = Array.isArray(d.vehicles) ? d.vehicles.map((v) => normalizeVehicle(v)) : []
+  if (vehicles.length === 0 && d.vehicle) {
+    // O KM antigo era único e representava o veículo vendido
+    vehicles = [normalizeVehicle(d.vehicle, legacyExitKm)]
+  }
+
+  let tradeIns = Array.isArray(d.trade_ins) ? d.trade_ins.map((v) => normalizeVehicle(v)) : []
+  if (tradeIns.length === 0 && d.trade_in) {
+    tradeIns = [normalizeVehicle(d.trade_in)]
+  }
+
+  const buyer = (d.buyer ?? {}) as Record<string, unknown>
+  const negotiation = (d.negotiation ?? {}) as Record<string, unknown>
+  const delivery = (d.delivery ?? {}) as Record<string, unknown>
+  const store = (d.store ?? {}) as Record<string, unknown>
+
+  return {
+    buyer: {
+      name: str(buyer.name),
+      cpf: str(buyer.cpf),
+      rg: str(buyer.rg),
+      phone: str(buyer.phone),
+      birth_date: toIsoDate(buyer.birth_date as string | Date | null),
+      address: str(buyer.address),
+    },
+    vehicles,
+    trade_ins: tradeIns,
+    negotiation: {
+      summary: str(negotiation.summary),
+      total_value: Number(negotiation.total_value) || 0,
+      observations: str(negotiation.observations),
+    },
+    delivery: { date: str(delivery.date), time: str(delivery.time) },
+    store: {
+      name: str(store.name),
+      address: str(store.address),
+      city: str(store.city),
+      seller_name: str(store.seller_name),
+    },
+  }
 }
 
 /* ---------- Formatação ---------- */
@@ -176,9 +254,10 @@ export function formatCep(cep: string | null | undefined): string {
   return `${d.slice(0, 5)}-${d.slice(5)}`
 }
 
+/** Formata a quilometragem. Retorna string vazia quando não informada. */
 export function formatKm(km: string | number | null | undefined): string {
   const d = String(km ?? '').replace(/\D/g, '')
-  if (!d) return 'NÃO DEFINIDO'
+  if (!d) return ''
   return Number(d).toLocaleString('pt-BR')
 }
 

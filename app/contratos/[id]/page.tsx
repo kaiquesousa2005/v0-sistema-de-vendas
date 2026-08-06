@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { notFound } from 'next/navigation'
 import { ContractView } from '@/components/dashboard/contract-view'
 
@@ -11,5 +12,10 @@ export default async function ContratoPage({ params }: { params: Promise<{ id: s
   const contractId = Number.parseInt(id, 10)
   if (!Number.isFinite(contractId)) notFound()
 
-  return <ContractView contractId={contractId} />
+  // Suspense porque ContractView lê searchParams (?print=1)
+  return (
+    <Suspense fallback={null}>
+      <ContractView contractId={contractId} />
+    </Suspense>
+  )
 }

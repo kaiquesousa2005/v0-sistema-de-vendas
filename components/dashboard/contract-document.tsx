@@ -1,45 +1,71 @@
 import {
+  SALE_WARRANTY,
   formatCpf,
   formatCurrency,
   formatKm,
   formatPhone,
   longDatePt,
-  type SaleContractData,
+  normalizeSaleData,
+  type ContractVehicle,
 } from '@/lib/contracts'
 
 interface ContractDocumentProps {
   title: string
-  data: SaleContractData
+  /** Snapshot do contrato. Aceita dados parciais (prévia) e o formato antigo. */
+  data: unknown
   contractDate: string
 }
 
-function VehicleBlock({ vehicle }: { vehicle: SaleContractData['vehicle'] }) {
+const EMPTY_VEHICLE: ContractVehicle = {
+  brand_model: '',
+  renavam: '',
+  plate: '',
+  chassis: '',
+  color: '',
+  year: '',
+  fuel: '',
+  km: '',
+}
+
+/** Mostra "—" quando o campo ainda não foi preenchido, evitando linhas órfãs. */
+function Val({ children }: { children?: string }) {
+  const text = (children ?? '').trim()
+  return <>{text || '—'}</>
+}
+
+function VehicleBlock({ vehicle, index, total }: { vehicle: ContractVehicle; index: number; total: number }) {
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-0.5 break-inside-avoid">
+      {total > 1 && <div className="font-semibold">VEÍCULO {index + 1}:</div>}
       <div className="flex flex-wrap gap-x-6">
         <span>
-          <strong>MARCA/MODELO:</strong> {vehicle.brand_model}
+          <strong>MARCA/MODELO:</strong> <Val>{vehicle.brand_model}</Val>
         </span>
         <span>
-          <strong>RENAVAN:</strong> {vehicle.renavam}
+          <strong>RENAVAN:</strong> <Val>{vehicle.renavam}</Val>
         </span>
         <span>
-          <strong>PLACA:</strong> {vehicle.plate}
+          <strong>PLACA:</strong> <Val>{vehicle.plate}</Val>
         </span>
       </div>
       <div className="flex flex-wrap gap-x-6">
         <span>
-          <strong>CHASSI:</strong> {vehicle.chassis}
+          <strong>CHASSI:</strong> <Val>{vehicle.chassis}</Val>
         </span>
         <span>
-          <strong>COR:</strong> {vehicle.color}
+          <strong>COR:</strong> <Val>{vehicle.color}</Val>
         </span>
         <span>
-          <strong>ANO:</strong> {vehicle.year}
+          <strong>ANO:</strong> <Val>{vehicle.year}</Val>
         </span>
       </div>
-      <div>
-        <strong>COMBUSTÍVEL:</strong> {vehicle.fuel}
+      <div className="flex flex-wrap gap-x-6">
+        <span>
+          <strong>COMBUSTÍVEL:</strong> <Val>{vehicle.fuel}</Val>
+        </span>
+        <span>
+          <strong>KM:</strong> <Val>{formatKm(vehicle.km)}</Val>
+        </span>
       </div>
     </div>
   )
@@ -59,59 +85,82 @@ function SignatureLine({ name, caption, extra }: { name?: string; caption: strin
 /**
  * Fac-símile do contrato em papel: preto sobre branco em qualquer tema,
  * proporções A4 e quebras de página controladas para impressão/PDF.
+ *
+ * Tolera snapshots incompletos porque é o mesmo componente usado na prévia,
+ * que roda com o formulário ainda pela metade.
  */
 export function ContractDocument({ title, data, contractDate }: ContractDocumentProps) {
-  const { buyer, vehicle, trade_in, negotiation, delivery, exit_km, warranty, store } = data
+  const { buyer, vehicles, trade_ins, negotiation, delivery, store } = normalizeSaleData(data)
   const storeName = store.name || 'A LOJA'
+
+  // Na prévia ainda pode não haver veículo escolhido: renderiza um bloco
+  // vazio para o documento manter a estrutura em vez de "sumir".
+  const soldList: ContractVehicle[] = vehicles.length > 0 ? vehicles : [EMPTY_VEHICLE]
+
+  const isPlural = soldList.length > 1
+  const kmLines = soldList.filter((v) => formatKm(v.km))
 
   return (
     <div
-      className="contract-sheet mx-auto w-full max-w-[210mm] bg-white px-[14mm] py-[12mm] text-[10.5px] leading-[1.45] text-black shadow-sm print:max-w-none print:px-[14mm] print:py-0 print:shadow-none"
+      className="contract-sheet mx-auto w-full max-w-[210mm] bg-white px-[14mm] py-[12mm] text-[10.5px] leading-[1.45] text-black shadow-sm print:max-w-none print:shadow-none"
       style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
     >
-      {/* Cabeçalho da loja */}
-      {store.address && (
-        <p className="mb-3 text-[10px] font-semibold">{store.address}</p>
-      )}
+      {/* Cabeçalho da loja. <img> puro para não depender de otimização/lazy
+          loading na hora de imprimir. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/images/contract-header.png"
+        alt="MCar Veículos"
+        className="mb-3 block w-full"
+        loading="eager"
+      />
+
+      {store.address && <p className="mb-3 text-[10px] font-semibold">{store.address}</p>}
 
       <h1 className="mb-3 text-center text-[13px] font-bold tracking-tight">{title}</h1>
 
       {/* Comprador */}
       <section className="mb-3 space-y-0.5">
         <div>
-          <strong>COMPRADOR:</strong> {buyer.name}
+          <strong>COMPRADOR:</strong> <Val>{buyer.name}</Val>
         </div>
         <div className="flex flex-wrap gap-x-6">
           <span>
-            <strong>CPF:</strong> {formatCpf(buyer.cpf)}
+            <strong>CPF:</strong> <Val>{formatCpf(buyer.cpf)}</Val>
           </span>
           <span>
-            <strong>TEL:</strong> {formatPhone(buyer.phone)}
+            <strong>TEL:</strong> <Val>{formatPhone(buyer.phone)}</Val>
           </span>
         </div>
         <div>
-          <strong>DATA DE NASCIMENTO:</strong> {longDatePt(buyer.birth_date)}
+          <strong>DATA DE NASCIMENTO:</strong> <Val>{longDatePt(buyer.birth_date)}</Val>
         </div>
         <div>
-          <strong>ENDERECO:</strong> {buyer.address}
+          <strong>ENDERECO:</strong> <Val>{buyer.address}</Val>
         </div>
       </section>
 
       {/* Cláusula 1ª — objeto */}
       <h2 className="mb-1 font-bold">DO OBJETO DO CONTRATO</h2>
       <p className="mb-1">
-        <strong>Cláusula 1ª.</strong> O presente contrato tem como OBJETO, o veículo abaixo
-        descriminado:
+        <strong>Cláusula 1ª.</strong> O presente contrato tem como OBJETO,{' '}
+        {isPlural ? 'os veículos abaixo descriminados' : 'o veículo abaixo descriminado'}:
       </p>
-      <section className="mb-3">
-        <VehicleBlock vehicle={vehicle} />
+      <section className="mb-3 space-y-2">
+        {soldList.map((vehicle, i) => (
+          <VehicleBlock key={i} vehicle={vehicle} index={i} total={soldList.length} />
+        ))}
       </section>
 
-      {/* Veículo recebido na troca */}
-      {trade_in && (
-        <section className="mb-3">
-          <h3 className="font-bold">RECEBENDO OS VEICULOS:</h3>
-          <VehicleBlock vehicle={trade_in} />
+      {/* Veículos recebidos na troca */}
+      {trade_ins.length > 0 && (
+        <section className="mb-3 space-y-2">
+          <h3 className="font-bold">
+            {trade_ins.length > 1 ? 'RECEBENDO OS VEICULOS:' : 'RECEBENDO O VEICULO:'}
+          </h3>
+          {trade_ins.map((vehicle, i) => (
+            <VehicleBlock key={i} vehicle={vehicle} index={i} total={trade_ins.length} />
+          ))}
         </section>
       )}
 
@@ -122,7 +171,9 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
       </p>
       <section className="mb-3 space-y-0.5">
         <div className="font-bold">NEGOCIACAO:</div>
-        <div>{negotiation.summary}</div>
+        <div>
+          <Val>{negotiation.summary}</Val>
+        </div>
         <div className="font-bold">{formatCurrency(negotiation.total_value)}</div>
         {negotiation.observations && (
           <p className="whitespace-pre-wrap">
@@ -171,19 +222,27 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
         </li>
         <li>
           F) GARANTIA DO VEÍCULO USADO: DECLARA O COMPRADOR QUE CONCORDA E ACEITA A GARANTIA
-          DECLARADA E ASSUMIDA PELA LOJA, NESTE INSTRUMENTO, QUAL SEJA DE {warranty.days} (
-          {warranty.days === 90 ? 'NOVENTA' : warranty.days}) DIAS OU{' '}
-          {warranty.km.toLocaleString('pt-BR')} KM (O QUE OCORRER PRIMEIRO), A PARTIR DA DATA DO
-          RECEBIMENTO DO VEÍCULO, REFERENTE A MOTOR (BLOCO) E CAMBIO (CAIXA DE MARCHA), QUE EM
-          SERVIÇO E USO NORMAL APRESENTA DEFEITO DE FUNCIONAMENTO POR LAUDO TÉCNICO EMITIDO PELA{' '}
-          {storeName}; A GARANTIA ESTÁ AUTOMATICAMENTE CANCELADA SE O VEÍCULO FOR SUBMETIDO E
-          SOBRECARGA OU ACIDENTES OU QUALQUER TIPO DE MAU USO, USADO PARA COMPETIÇÃO DIVERSAS, SE A
-          MANUTENÇÃO FOR NEGLIGENCIADA, SE A ESTRUTURA TÉCNICA OU MECÂNICA FOR MODIFICADA, SE HOUVER
-          MODIFICAÇÃO DO COMBUSTÍVEL DE PROPULSÃO DO SISTEMA DE MOTOR E SE OS SERVIÇOS COBERTOS PELA
-          GARANTIA FOREM EXECUTADOS POR OFICINAS NÃO AUTORIZADA PRÉVIA E EXPRESSAMENTE (POR ESCRITO)
-          PELA {storeName}.
+          DECLARADA E ASSUMIDA PELA LOJA, NESTE INSTRUMENTO, QUAL SEJA DE {SALE_WARRANTY.days} (
+          {SALE_WARRANTY.daysText}) DIAS OU {SALE_WARRANTY.km.toLocaleString('pt-BR')} KM (O QUE
+          OCORRER PRIMEIRO), A PARTIR DA DATA DO RECEBIMENTO DO VEÍCULO, REFERENTE A MOTOR (BLOCO) E
+          CAMBIO (CAIXA DE MARCHA), QUE EM SERVIÇO E USO NORMAL APRESENTA DEFEITO DE FUNCIONAMENTO
+          POR LAUDO TÉCNICO EMITIDO PELA {storeName}; A GARANTIA ESTÁ AUTOMATICAMENTE CANCELADA SE O
+          VEÍCULO FOR SUBMETIDO E SOBRECARGA OU ACIDENTES OU QUALQUER TIPO DE MAU USO, USADO PARA
+          COMPETIÇÃO DIVERSAS, SE A MANUTENÇÃO FOR NEGLIGENCIADA, SE A ESTRUTURA TÉCNICA OU MECÂNICA
+          FOR MODIFICADA, SE HOUVER MODIFICAÇÃO DO COMBUSTÍVEL DE PROPULSÃO DO SISTEMA DE MOTOR E SE
+          OS SERVIÇOS COBERTOS PELA GARANTIA FOREM EXECUTADOS POR OFICINAS NÃO AUTORIZADA PRÉVIA E
+          EXPRESSAMENTE (POR ESCRITO) PELA {storeName}.
         </li>
-        <li>G) VEICULO SAI DA LOJA O VEICULO COM {formatKm(exit_km)} KM</li>
+        {kmLines.length > 0 && (
+          <li>
+            G){' '}
+            {kmLines.length === 1
+              ? `VEICULO SAI DA LOJA O VEICULO COM ${formatKm(kmLines[0].km)} KM`
+              : `VEICULOS SAEM DA LOJA COM A SEGUINTE QUILOMETRAGEM: ${kmLines
+                  .map((v) => `${v.brand_model || 'VEÍCULO'} — ${formatKm(v.km)} KM`)
+                  .join('; ')}`}
+          </li>
+        )}
       </ol>
 
       {/* Local e data */}
@@ -196,7 +255,7 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
         <SignatureLine name={store.seller_name} caption="VENDEDOR" />
         <SignatureLine
           name={buyer.name}
-          extra={`CPF: ${formatCpf(buyer.cpf)}`}
+          extra={buyer.cpf ? `CPF: ${formatCpf(buyer.cpf)}` : undefined}
           caption="COMPRADOR"
         />
 

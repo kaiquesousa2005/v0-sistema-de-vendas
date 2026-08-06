@@ -1,13 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/dashboard/header'
 import { ContractDocument } from '@/components/dashboard/contract-document'
-import { CONTRACT_TYPES, shortDatePt, type ContractType, type SaleContractData } from '@/lib/contracts'
-import { ArrowLeft, Loader2, Printer } from 'lucide-react'
+import { ContractFormDialog } from '@/components/dashboard/contract-form-dialog'
+import { CONTRACT_TYPES, shortDatePt, type ContractType } from '@/lib/contracts'
+import { ArrowLeft, Download, Loader2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Contract {
@@ -15,35 +16,60 @@ interface Contract {
   type: ContractType
   contract_number: string
   contract_date: string
-  data: SaleContractData
+  data: unknown
+}
+
+/**
+ * Abre a caixa de impressão do navegador com o número do contrato como título,
+ * que também é o nome sugerido do arquivo em "Salvar como PDF".
+ */
+function printContract(fileName: string) {
+  const previousTitle = document.title
+  document.title = fileName
+  window.print()
+  // Restaura após o diálogo fechar para não afetar a navegação
+  window.setTimeout(() => {
+    document.title = previousTitle
+  }, 500)
 }
 
 export function ContractView({ contractId }: { contractId: number }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [contract, setContract] = useState<Contract | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isEditOpen, setIsEditOpen] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-
-    fetch(`/api/contracts/${contractId}`)
-      .then(async (response) => {
-        const data = await response.json()
-        if (!response.ok) throw new Error(data.error || 'Erro ao carregar contrato')
-        if (!cancelled) setContract(data)
-      })
-      .catch((error) => {
-        console.error('[v0] load contract error:', error)
-        if (!cancelled) toast.error(error.message)
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false)
-      })
-
-    return () => {
-      cancelled = true
+  const loadContract = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/contracts/${contractId}`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Erro ao carregar contrato')
+      setContract(data)
+      return data as Contract
+    } catch (error) {
+      console.error('[v0] load contract error:', error)
+      toast.error(error instanceof Error ? error.message : 'Erro ao carregar contrato')
+      return null
+    } finally {
+      setIsLoading(false)
     }
   }, [contractId])
+
+  useEffect(() => {
+    loadContract()
+  }, [loadContract])
+
+  // `?print=1` (usado pelo botão "Baixar PDF" da listagem) já abre a impressão
+  useEffect(() => {
+    if (!contract || searchParams.get('print') !== '1') return
+
+    const timer = window.setTimeout(() => printContract(contract.contract_number), 600)
+    // Limpa o parâmetro para não reimprimir ao voltar para a página
+    router.replace(`/contratos/${contract.id}`)
+
+    return () => window.clearTimeout(timer)
+  }, [contract, searchParams, router])
 
   if (isLoading) {
     return (
@@ -106,10 +132,20 @@ export function ContractView({ contractId }: { contractId: number }) {
             </div>
           </div>
 
-          <Button size="sm" className="gap-2" onClick={() => window.print()}>
-            <Printer className="h-4 w-4" />
-            Imprimir / Salvar PDF
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => setIsEditOpen(true)}>
+              <Pencil className="h-4 w-4" />
+              Editar
+            </Button>
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={() => printContract(contract.contract_number)}
+            >
+              <Download className="h-4 w-4" />
+              Baixar PDF
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -120,6 +156,16 @@ export function ContractView({ contractId }: { contractId: number }) {
           contractDate={contract.contract_date}
         />
       </main>
+
+      <ContractFormDialog
+        open={isEditOpen}
+        onOpenChange={setIsEditOpen}
+        contractId={contract.id}
+        onSaved={() => {
+          setIsEditOpen(false)
+          loadContract()
+        }}
+      />
     </div>
   )
 }

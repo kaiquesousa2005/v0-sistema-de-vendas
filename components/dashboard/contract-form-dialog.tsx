@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
@@ -14,17 +13,31 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { EntityPicker, type PickerItem } from '@/components/dashboard/entity-picker'
-import { CONTRACT_TYPES, CONTRACT_TYPE_KEYS, type ContractType } from '@/lib/contracts'
+import { ContractDocument } from '@/components/dashboard/contract-document'
+import {
+  CONTRACT_TYPES,
+  CONTRACT_TYPE_KEYS,
+  SALE_WARRANTY,
+  formatCpf,
+  normalizeSaleData,
+  toIsoDate,
+  type ContractType,
+  type SaleContractData,
+} from '@/lib/contracts'
 import {
   ArrowLeft,
   ArrowLeftRight,
   Car,
+  Eye,
   FileSignature,
   FileText,
   HandCoins,
   Loader2,
   Lock,
+  Plus,
   Repeat,
+  ShieldCheck,
+  Trash2,
   Undo2,
   User,
 } from 'lucide-react'
@@ -133,7 +146,35 @@ interface RawVehicle {
   model_year: number
 }
 
-const emptyTradeIn = {
+/** Veículo vendido: escolhido no estoque, com ajustes por contrato. */
+interface SoldRow {
+  key: number
+  item: PickerItem | null
+  color: string
+  fuel: string
+  km: string
+}
+
+/** Veículo recebido em troca: digitado manualmente. */
+interface TradeRow {
+  key: number
+  brand_model: string
+  renavam: string
+  plate: string
+  chassis: string
+  color: string
+  year: string
+  fuel: string
+  km: string
+}
+
+let rowCounter = 0
+const nextKey = () => ++rowCounter
+
+const newSoldRow = (): SoldRow => ({ key: nextKey(), item: null, color: '', fuel: '', km: '' })
+
+const newTradeRow = (): TradeRow => ({
+  key: nextKey(),
   brand_model: '',
   renavam: '',
   plate: '',
@@ -141,7 +182,8 @@ const emptyTradeIn = {
   color: '',
   year: '',
   fuel: '',
-}
+  km: '',
+})
 
 function todayIso() {
   // en-CA formata como YYYY-MM-DD respeitando o fuso local
@@ -151,24 +193,28 @@ function todayIso() {
 interface ContractFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreated: (contractId: number) => void
+  onSaved: (contractId: number) => void
+  /** Quando informado, o modal edita o contrato em vez de criar um novo. */
+  contractId?: number | null
 }
 
-export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFormDialogProps) {
-  const [step, setStep] = useState<'type' | 'form'>('type')
+export function ContractFormDialog({
+  open,
+  onOpenChange,
+  onSaved,
+  contractId = null,
+}: ContractFormDialogProps) {
+  const isEditing = contractId != null
+
+  const [step, setStep] = useState<'type' | 'form' | 'preview'>('type')
   const [type, setType] = useState<ContractType>('venda')
   const [isSaving, setIsSaving] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   const [customer, setCustomer] = useState<PickerItem | null>(null)
-  const [vehicle, setVehicle] = useState<PickerItem | null>(null)
+  const [sold, setSold] = useState<SoldRow[]>([newSoldRow()])
+  const [trades, setTrades] = useState<TradeRow[]>([])
   const vehicleCache = useRef<Map<number, RawVehicle>>(new Map())
-
-  const [color, setColor] = useState('')
-  const [fuel, setFuel] = useState('')
-  const [exitKm, setExitKm] = useState('')
-
-  const [hasTradeIn, setHasTradeIn] = useState(false)
-  const [tradeIn, setTradeIn] = useState({ ...emptyTradeIn })
 
   const [summary, setSummary] = useState('')
   const [totalValue, setTotalValue] = useState('')
@@ -178,31 +224,27 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
   const [deliveryDate, setDeliveryDate] = useState(todayIso())
   const [deliveryTime, setDeliveryTime] = useState('')
 
-  const [warrantyDays, setWarrantyDays] = useState('90')
-  const [warrantyKm, setWarrantyKm] = useState('5000')
-
   const [storeAddress, setStoreAddress] = useState('')
   const [storeCity, setStoreCity] = useState('')
   const [sellerName, setSellerName] = useState('')
+
+  // Prévia montada no servidor, com a mesma lógica do documento final
+  const [preview, setPreview] = useState<{ data: SaleContractData; contractDate: string } | null>(null)
+  const [isPreviewing, setIsPreviewing] = useState(false)
 
   const resetForm = useCallback(() => {
     setStep('type')
     setType('venda')
     setCustomer(null)
-    setVehicle(null)
-    setColor('')
-    setFuel('')
-    setExitKm('')
-    setHasTradeIn(false)
-    setTradeIn({ ...emptyTradeIn })
+    setSold([newSoldRow()])
+    setTrades([])
     setSummary('')
     setTotalValue('')
     setObservations('')
     setContractDate(todayIso())
     setDeliveryDate(todayIso())
     setDeliveryTime('')
-    setWarrantyDays('90')
-    setWarrantyKm('5000')
+    setPreview(null)
   }, [])
 
   // Pré-carrega os dados da loja para o cabeçalho e a assinatura
@@ -214,9 +256,9 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return
-        setStoreAddress(data.address ?? '')
-        setStoreCity(data.city ?? '')
-        setSellerName(data.seller_name ?? '')
+        setStoreAddress((prev) => prev || (data.address ?? ''))
+        setStoreCity((prev) => prev || (data.city ?? ''))
+        setSellerName((prev) => prev || (data.seller_name ?? ''))
       })
       .catch((error) => console.error('[v0] store profile error:', error))
 
@@ -224,6 +266,84 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
       cancelled = true
     }
   }, [open])
+
+  // Modo edição: carrega o contrato e reidrata o formulário a partir do snapshot
+  useEffect(() => {
+    if (!open || contractId == null) return
+    let cancelled = false
+
+    setIsLoading(true)
+    fetch(`/api/contracts/${contractId}`)
+      .then(async (response) => {
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.error || 'Erro ao carregar contrato')
+        if (cancelled) return
+
+        const data = normalizeSaleData(payload.data)
+
+        setType((payload.type as ContractType) ?? 'venda')
+        setCustomer(
+          payload.customer_id
+            ? {
+                id: Number(payload.customer_id),
+                primary: data.buyer.name,
+                secondary: data.buyer.cpf ? formatCpf(data.buyer.cpf) : undefined,
+              }
+            : null,
+        )
+
+        setSold(
+          data.vehicles.length > 0
+            ? data.vehicles.map((v) => ({
+                key: nextKey(),
+                item: v.vehicle_id
+                  ? { id: Number(v.vehicle_id), primary: v.brand_model, secondary: v.plate }
+                  : null,
+                color: v.color,
+                fuel: v.fuel,
+                km: v.km,
+              }))
+            : [newSoldRow()],
+        )
+
+        // `vehicle_id` não existe nas trocas (são digitadas), por isso é descartado
+        setTrades(
+          data.trade_ins.map((v) => ({
+            key: nextKey(),
+            brand_model: v.brand_model,
+            renavam: v.renavam,
+            plate: v.plate,
+            chassis: v.chassis,
+            color: v.color,
+            year: v.year,
+            fuel: v.fuel,
+            km: v.km,
+          })),
+        )
+
+        setSummary(data.negotiation.summary)
+        setTotalValue(data.negotiation.total_value ? String(data.negotiation.total_value) : '')
+        setObservations(data.negotiation.observations)
+        setContractDate(toIsoDate(payload.contract_date) || todayIso())
+        setDeliveryDate(data.delivery.date || '')
+        setDeliveryTime(data.delivery.time || '')
+        setStoreAddress(data.store.address)
+        setStoreCity(data.store.city)
+        setSellerName(data.store.seller_name)
+        setStep('form')
+      })
+      .catch((error) => {
+        console.error('[v0] load contract for edit error:', error)
+        if (!cancelled) toast.error(error.message)
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, contractId])
 
   const fetchCustomers = useCallback(async (search: string): Promise<PickerItem[]> => {
     const params = new URLSearchParams({ limit: '20' })
@@ -253,15 +373,30 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
     }))
   }, [])
 
-  // Ao escolher o veículo, pré-preenche cor, combustível e KM do cadastro
-  const handleVehicleChange = (item: PickerItem) => {
-    setVehicle(item)
+  /** Ao escolher o veículo, pré-preenche cor, combustível e KM do cadastro. */
+  const handleSoldVehicleChange = (key: number, item: PickerItem) => {
     const raw = vehicleCache.current.get(item.id)
-    if (raw) {
-      setColor(raw.color ?? '')
-      setFuel(raw.fuel ?? '')
-      setExitKm(raw.km != null ? String(raw.km) : '')
-    }
+    setSold((rows) =>
+      rows.map((row) =>
+        row.key === key
+          ? {
+              ...row,
+              item,
+              color: raw?.color ?? '',
+              fuel: raw?.fuel ?? '',
+              km: raw?.km != null ? String(raw.km) : '',
+            }
+          : row,
+      ),
+    )
+  }
+
+  const updateSold = (key: number, patch: Partial<SoldRow>) => {
+    setSold((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)))
+  }
+
+  const updateTrade = (key: number, patch: Partial<TradeRow>) => {
+    setTrades((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)))
   }
 
   const handleSelectType = (key: ContractType) => {
@@ -278,15 +413,61 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
     if (!nextOpen) resetForm()
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  /** Payload enviado tanto para a prévia quanto para gravar. */
+  const buildPayload = () => ({
+    type: 'venda' as const,
+    customer_id: customer?.id ?? null,
+    vehicles: sold
+      .filter((row) => row.item)
+      .map((row) => ({
+        vehicle_id: row.item!.id,
+        color: row.color,
+        fuel: row.fuel,
+        km: row.km,
+      })),
+    trade_ins: trades.map(({ key: _key, ...rest }) => rest),
+    contract_date: contractDate,
+    negotiation: {
+      summary,
+      total_value: Number(totalValue) || 0,
+      observations,
+    },
+    delivery: { date: deliveryDate, time: deliveryTime },
+    store: { address: storeAddress, city: storeCity, seller_name: sellerName },
+  })
+
+  const handlePreview = async () => {
+    setIsPreviewing(true)
+    try {
+      const response = await fetch('/api/contracts/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildPayload()),
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        toast.error(payload.error || 'Erro ao gerar prévia')
+        return
+      }
+      setPreview({ data: payload.data, contractDate: payload.contract_date || contractDate })
+      setStep('preview')
+    } catch (error) {
+      console.error('[v0] preview contract error:', error)
+      toast.error('Erro de conexão ao gerar prévia')
+    } finally {
+      setIsPreviewing(false)
+    }
+  }
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault()
 
     if (!customer) {
       toast.error('Selecione o comprador')
       return
     }
-    if (!vehicle) {
-      toast.error('Selecione o veículo')
+    if (!sold.some((row) => row.item)) {
+      toast.error('Selecione ao menos um veículo vendido')
       return
     }
     if (!summary.trim()) {
@@ -297,59 +478,49 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
       toast.error('Informe o nome do vendedor')
       return
     }
-    if (hasTradeIn && !tradeIn.brand_model.trim()) {
-      toast.error('Informe a marca/modelo do veículo recebido na troca')
-      return
-    }
 
     setIsSaving(true)
     try {
-      const response = await fetch('/api/contracts', {
-        method: 'POST',
+      const response = await fetch(isEditing ? `/api/contracts/${contractId}` : '/api/contracts', {
+        method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'venda',
-          customer_id: customer.id,
-          vehicle_id: vehicle.id,
-          contract_date: contractDate,
-          vehicle_overrides: { color, fuel },
-          trade_in: hasTradeIn ? tradeIn : null,
-          negotiation: {
-            summary,
-            total_value: Number(totalValue) || 0,
-            observations,
-          },
-          delivery: { date: deliveryDate, time: deliveryTime },
-          exit_km: exitKm,
-          warranty: {
-            days: Number(warrantyDays) || 90,
-            km: Number(warrantyKm) || 5000,
-          },
-          store: { address: storeAddress, city: storeCity, seller_name: sellerName },
-        }),
+        body: JSON.stringify(buildPayload()),
       })
 
       const data = await response.json()
       if (!response.ok) {
-        toast.error(data.error || 'Erro ao criar contrato')
+        toast.error(data.error || 'Erro ao salvar contrato')
         return
       }
 
-      toast.success(`Contrato ${data.contract_number} criado`)
+      toast.success(isEditing ? 'Contrato atualizado' : `Contrato ${data.contract_number} criado`)
       handleClose(false)
-      onCreated(Number(data.id))
+      onSaved(Number(data.id))
     } catch (error) {
-      console.error('[v0] create contract error:', error)
-      toast.error('Erro de conexão ao criar contrato')
+      console.error('[v0] save contract error:', error)
+      toast.error('Erro de conexão ao salvar contrato')
     } finally {
       setIsSaving(false)
     }
   }
 
+  const showTypeStep = step === 'type' && !isEditing
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
-        {step === 'type' ? (
+      <DialogContent
+        className={
+          step === 'preview'
+            ? 'max-h-[92vh] max-w-5xl overflow-y-auto'
+            : 'max-h-[90vh] max-w-3xl overflow-y-auto'
+        }
+      >
+        {isLoading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Carregando contrato...
+          </div>
+        ) : showTypeStep ? (
           <>
             <DialogHeader>
               <DialogTitle>Novo contrato</DialogTitle>
@@ -388,8 +559,8 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
               })}
             </div>
           </>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+        ) : step === 'preview' ? (
+          <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Button
@@ -397,15 +568,60 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
                   variant="ghost"
                   size="sm"
                   className="h-7 w-7 p-0"
-                  onClick={() => setStep('type')}
-                  aria-label="Voltar para a escolha do tipo"
+                  onClick={() => setStep('form')}
+                  aria-label="Voltar para a edição"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
-                {CONTRACT_TYPES[type].label}
+                Prévia do contrato
               </DialogTitle>
               <DialogDescription>
-                Os dados do comprador e do veículo vêm do cadastro. Complete a negociação abaixo.
+                Campos ainda não preenchidos aparecem como &quot;—&quot;. Nada foi salvo ainda.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="overflow-x-auto rounded-lg border border-border bg-muted/40 p-3">
+              <ContractDocument
+                title={CONTRACT_TYPES[type].title}
+                data={preview?.data}
+                contractDate={preview?.contractDate ?? contractDate}
+              />
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+              <Button type="button" variant="outline" onClick={() => setStep('form')}>
+                Voltar para edição
+              </Button>
+              <Button type="button" onClick={() => handleSubmit()} disabled={isSaving} className="gap-2">
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileSignature className="h-4 w-4" />
+                )}
+                {isEditing ? 'Salvar alterações' : 'Gerar contrato'}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {!isEditing && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={() => setStep('type')}
+                    aria-label="Voltar para a escolha do tipo"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                )}
+                {isEditing ? `Editar ${CONTRACT_TYPES[type].label}` : CONTRACT_TYPES[type].label}
+              </DialogTitle>
+              <DialogDescription>
+                Os dados do comprador e dos veículos vêm do cadastro. Complete a negociação abaixo.
               </DialogDescription>
             </DialogHeader>
 
@@ -421,94 +637,183 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
               />
             </Section>
 
-            {/* Veículo */}
-            <Section icon={Car} title="Veículo vendido">
-              <EntityPicker
-                value={vehicle}
-                onChange={handleVehicleChange}
-                fetcher={fetchVehicles}
-                placeholder="Selecionar veículo em estoque"
-                searchPlaceholder="Buscar por placa, marca ou modelo..."
-                emptyText="Nenhum veículo encontrado."
-              />
+            {/* Veículos vendidos */}
+            <Section
+              icon={Car}
+              title="Veículos vendidos"
+              action={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5"
+                  onClick={() => setSold((rows) => [...rows, newSoldRow()])}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Adicionar
+                </Button>
+              }
+            >
+              <div className="space-y-4">
+                {sold.map((row, index) => (
+                  <div
+                    key={row.key}
+                    className="space-y-3 rounded-md border border-dashed border-border p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        Veículo {index + 1}
+                      </span>
+                      {sold.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => setSold((rows) => rows.filter((r) => r.key !== row.key))}
+                          aria-label={`Remover veículo ${index + 1}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Field label="Cor" value={color} onChange={setColor} placeholder="PRETA" />
-                <Field label="Combustível" value={fuel} onChange={setFuel} placeholder="FLEX" />
-                <Field
-                  label="KM de saída"
-                  value={exitKm}
-                  onChange={setExitKm}
-                  placeholder="112000"
-                  type="number"
-                />
+                    <EntityPicker
+                      value={row.item}
+                      onChange={(item) => handleSoldVehicleChange(row.key, item)}
+                      fetcher={fetchVehicles}
+                      placeholder="Selecionar veículo cadastrado"
+                      searchPlaceholder="Buscar por placa, marca ou modelo..."
+                      emptyText="Nenhum veículo encontrado."
+                    />
+
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <Field
+                        label="Cor"
+                        value={row.color}
+                        onChange={(v) => updateSold(row.key, { color: v })}
+                        placeholder="PRETA"
+                      />
+                      <Field
+                        label="Combustível"
+                        value={row.fuel}
+                        onChange={(v) => updateSold(row.key, { fuel: v })}
+                        placeholder="FLEX"
+                      />
+                      <Field
+                        label="KM"
+                        value={row.km}
+                        onChange={(v) => updateSold(row.key, { km: v })}
+                        placeholder="112000"
+                        type="number"
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </Section>
 
-            {/* Veículo recebido na troca */}
+            {/* Veículos recebidos na troca */}
             <Section
               icon={ArrowLeftRight}
-              title="Veículo recebido na troca"
+              title="Veículos recebidos na troca"
               action={
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    {hasTradeIn ? 'Incluído' : 'Não incluído'}
-                  </span>
-                  <Switch checked={hasTradeIn} onCheckedChange={setHasTradeIn} />
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5"
+                  onClick={() => setTrades((rows) => [...rows, newTradeRow()])}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Adicionar
+                </Button>
               }
             >
-              {hasTradeIn ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field
-                    label="Marca/Modelo"
-                    value={tradeIn.brand_model}
-                    onChange={(v) => setTradeIn((p) => ({ ...p, brand_model: v }))}
-                    placeholder="VW SAVEIRO CD 1.6"
-                    required
-                    className="sm:col-span-2"
-                  />
-                  <Field
-                    label="Placa"
-                    value={tradeIn.plate}
-                    onChange={(v) => setTradeIn((p) => ({ ...p, plate: v }))}
-                    placeholder="PMW2J33"
-                  />
-                  <Field
-                    label="Renavam"
-                    value={tradeIn.renavam}
-                    onChange={(v) => setTradeIn((p) => ({ ...p, renavam: v }))}
-                    placeholder="01151711460"
-                  />
-                  <Field
-                    label="Chassi"
-                    value={tradeIn.chassis}
-                    onChange={(v) => setTradeIn((p) => ({ ...p, chassis: v }))}
-                    placeholder="9BWJB45U4JP091533"
-                  />
-                  <Field
-                    label="Cor"
-                    value={tradeIn.color}
-                    onChange={(v) => setTradeIn((p) => ({ ...p, color: v }))}
-                    placeholder="BRANCA"
-                  />
-                  <Field
-                    label="Ano"
-                    value={tradeIn.year}
-                    onChange={(v) => setTradeIn((p) => ({ ...p, year: v }))}
-                    placeholder="2018/2018"
-                  />
-                  <Field
-                    label="Combustível"
-                    value={tradeIn.fuel}
-                    onChange={(v) => setTradeIn((p) => ({ ...p, fuel: v }))}
-                    placeholder="FLEX"
-                  />
-                </div>
-              ) : (
+              {trades.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  Ative se o comprador estiver entregando um veículo como parte do pagamento.
+                  Adicione se o comprador estiver entregando um ou mais veículos como parte do
+                  pagamento.
                 </p>
+              ) : (
+                <div className="space-y-4">
+                  {trades.map((row, index) => (
+                    <div
+                      key={row.key}
+                      className="space-y-3 rounded-md border border-dashed border-border p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          Recebido {index + 1}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => setTrades((rows) => rows.filter((r) => r.key !== row.key))}
+                          aria-label={`Remover veículo recebido ${index + 1}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field
+                          label="Marca/Modelo"
+                          value={row.brand_model}
+                          onChange={(v) => updateTrade(row.key, { brand_model: v })}
+                          placeholder="VW SAVEIRO CD 1.6"
+                          className="sm:col-span-2"
+                        />
+                        <Field
+                          label="Placa"
+                          value={row.plate}
+                          onChange={(v) => updateTrade(row.key, { plate: v })}
+                          placeholder="PMW2J33"
+                        />
+                        <Field
+                          label="Renavam"
+                          value={row.renavam}
+                          onChange={(v) => updateTrade(row.key, { renavam: v })}
+                          placeholder="01151711460"
+                        />
+                        <Field
+                          label="Chassi"
+                          value={row.chassis}
+                          onChange={(v) => updateTrade(row.key, { chassis: v })}
+                          placeholder="9BWJB45U4JP091533"
+                        />
+                        <Field
+                          label="Cor"
+                          value={row.color}
+                          onChange={(v) => updateTrade(row.key, { color: v })}
+                          placeholder="BRANCA"
+                        />
+                        <Field
+                          label="Ano"
+                          value={row.year}
+                          onChange={(v) => updateTrade(row.key, { year: v })}
+                          placeholder="2018/2018"
+                        />
+                        <Field
+                          label="Combustível"
+                          value={row.fuel}
+                          onChange={(v) => updateTrade(row.key, { fuel: v })}
+                          placeholder="FLEX"
+                        />
+                        <Field
+                          label="KM"
+                          value={row.km}
+                          onChange={(v) => updateTrade(row.key, { km: v })}
+                          placeholder="98000"
+                          type="number"
+                          className="sm:col-span-2"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </Section>
 
@@ -542,8 +847,8 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
               />
             </Section>
 
-            {/* Entrega e garantia */}
-            <Section icon={FileText} title="Entrega e garantia">
+            {/* Entrega */}
+            <Section icon={FileText} title="Entrega">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
                   label="Data de entrega"
@@ -557,18 +862,14 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
                   onChange={setDeliveryTime}
                   type="time"
                 />
-                <Field
-                  label="Garantia (dias)"
-                  value={warrantyDays}
-                  onChange={setWarrantyDays}
-                  type="number"
-                />
-                <Field
-                  label="Garantia (KM)"
-                  value={warrantyKm}
-                  onChange={setWarrantyKm}
-                  type="number"
-                />
+              </div>
+              <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">
+                  Garantia fixa de {SALE_WARRANTY.days} dias ou{' '}
+                  {SALE_WARRANTY.km.toLocaleString('pt-BR')} KM (o que ocorrer primeiro), já incluída
+                  na cláusula F do contrato.
+                </p>
               </div>
             </Section>
 
@@ -599,9 +900,23 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
               />
             </Section>
 
-            <div className="flex justify-end gap-2 border-t border-border pt-4">
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
               <Button type="button" variant="outline" onClick={() => handleClose(false)}>
                 Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handlePreview}
+                disabled={isPreviewing}
+                className="gap-2"
+              >
+                {isPreviewing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+                Visualizar prévia
               </Button>
               <Button type="submit" disabled={isSaving} className="gap-2">
                 {isSaving ? (
@@ -609,7 +924,7 @@ export function ContractFormDialog({ open, onOpenChange, onCreated }: ContractFo
                 ) : (
                   <FileSignature className="h-4 w-4" />
                 )}
-                Gerar contrato
+                {isEditing ? 'Salvar alterações' : 'Gerar contrato'}
               </Button>
             </div>
           </form>
