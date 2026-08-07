@@ -53,6 +53,17 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const c = current[0]
+
+    // Se uma nova CNH foi enviada, remove o PDF antigo do Blob
+    const newCnh = data.cnh_pathname
+    if (newCnh && c.cnh_pathname && newCnh !== c.cnh_pathname) {
+      try {
+        await del(c.cnh_pathname)
+      } catch (e) {
+        console.error('[v0] Failed to delete replaced CNH blob:', e)
+      }
+    }
+
     const result = await sql`
       UPDATE customers SET
         full_name = ${data.full_name ?? c.full_name},
@@ -70,7 +81,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         cnh_pathname = ${data.cnh_pathname !== undefined ? (data.cnh_pathname || null) : c.cnh_pathname},
         updated_at = NOW()
       WHERE id = ${customerId} AND store_id = ${storeId}
-      RETURNING *
+      RETURNING id, full_name, (cnh_pathname IS NOT NULL) AS has_cnh
     `
     return NextResponse.json(result[0])
   } catch (error) {

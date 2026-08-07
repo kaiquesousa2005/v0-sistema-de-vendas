@@ -4,6 +4,8 @@ import { jwtVerify } from 'jose'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
+const MAX_SIZE = 8 * 1024 * 1024 // 8MB
+
 async function getStoreId(request: NextRequest): Promise<number | null> {
   try {
     const token = request.cookies.get('auth-token')?.value
@@ -21,28 +23,39 @@ export async function POST(request: NextRequest) {
 
   try {
     const formData = await request.formData()
-    const file = formData.get('file') as File
+    const file = formData.get('file')
 
-    if (!file) {
+    if (!(file instanceof File) || file.size === 0) {
       return NextResponse.json({ error: 'Nenhum arquivo enviado' }, { status: 400 })
     }
 
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
-    if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json({ error: 'Formato inválido. Use JPG, PNG, WEBP ou PDF.' }, { status: 400 })
+    // A CNH é sempre um PDF
+    const isPdf =
+      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    if (!isPdf) {
+      return NextResponse.json(
+        { error: 'A CNH deve ser um arquivo PDF.' },
+        { status: 400 },
+      )
     }
 
-    const maxSize = 5 * 1024 * 1024 // 5MB
-    if (file.size > maxSize) {
-      return NextResponse.json({ error: 'Arquivo muito grande. Máximo 5MB.' }, { status: 400 })
+    if (file.size > MAX_SIZE) {
+      return NextResponse.json(
+        { error: 'Arquivo muito grande. Máximo 8MB.' },
+        { status: 400 },
+      )
     }
 
-    const ext = file.name.split('.').pop()
-    const filename = `cnh/loja-${storeId}/${Date.now()}.${ext}`
+    const filename = `cnh/loja-${storeId}/${Date.now()}-${crypto.randomUUID()}.pdf`
 
-    const blob = await put(filename, file, { access: 'public' })
+    // O store do Blob é privado: o arquivo só é servido pela rota autenticada
+    // /api/customers/[id]/cnh, nunca por URL pública.
+    const blob = await put(filename, file, {
+      access: 'private',
+      contentType: 'application/pdf',
+    })
 
-    return NextResponse.json({ pathname: blob.url })
+    return NextResponse.json({ pathname: blob.pathname })
   } catch (error) {
     console.error('[v0] CNH upload error:', error)
     return NextResponse.json({ error: 'Erro ao fazer upload da CNH' }, { status: 500 })

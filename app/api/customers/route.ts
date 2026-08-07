@@ -39,12 +39,59 @@ export async function GET(request: NextRequest) {
 
   try {
     const sql = neon(process.env.DATABASE_URL!)
-    const customers = await sql`
-      SELECT * FROM customers
-      WHERE store_id = ${storeId}
-      ORDER BY full_name ASC
-    `
-    return NextResponse.json(customers)
+    const sp = request.nextUrl.searchParams
+
+    const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1') || 1)
+    const limit = Math.min(50, Math.max(1, Number.parseInt(sp.get('limit') ?? '20') || 20))
+    const offset = (page - 1) * limit
+
+    const search = (sp.get('search') ?? '').trim()
+    const like = `%${search}%`
+    const digits = search.replace(/\D/g, '')
+    const digitsLike = `%${digits}%`
+
+    // Busca por nome, CPF ou telefone (ignorando máscara nos campos numéricos)
+    const [countRows, customers] = await Promise.all([
+      sql`
+        SELECT COUNT(*)::int AS total
+        FROM customers
+        WHERE store_id = ${storeId}
+          AND (
+            ${search} = ''
+            OR full_name ILIKE ${like}
+            OR (${digits} <> '' AND cpf LIKE ${digitsLike})
+            OR (${digits} <> '' AND regexp_replace(phone, '[^0-9]', '', 'g') LIKE ${digitsLike})
+          )
+      `,
+      sql`
+        SELECT
+          id, full_name, birth_date, phone, email, rg, cpf,
+          address_street, address_number, address_complement,
+          address_neighborhood, address_city, address_state, address_zip,
+          (cnh_pathname IS NOT NULL) AS has_cnh,
+          created_at
+        FROM customers
+        WHERE store_id = ${storeId}
+          AND (
+            ${search} = ''
+            OR full_name ILIKE ${like}
+            OR (${digits} <> '' AND cpf LIKE ${digitsLike})
+            OR (${digits} <> '' AND regexp_replace(phone, '[^0-9]', '', 'g') LIKE ${digitsLike})
+          )
+        ORDER BY full_name ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `,
+    ])
+
+    const total = Number(countRows[0]?.total ?? 0)
+
+    return NextResponse.json({
+      customers,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    })
   } catch (error) {
     console.error('[v0] GET customers error:', error)
     return NextResponse.json({ error: 'Erro ao buscar clientes' }, { status: 500 })
@@ -82,7 +129,7 @@ export async function POST(request: NextRequest) {
         ${data.address_neighborhood}, ${data.address_city}, ${data.address_state.toUpperCase()},
         ${data.address_zip.replace(/\D/g, '')}, ${data.cnh_pathname || null}
       )
-      RETURNING *
+      RETURNING id, full_name, (cnh_pathname IS NOT NULL) AS has_cnh
     `
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {

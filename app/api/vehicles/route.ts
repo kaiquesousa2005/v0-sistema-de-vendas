@@ -35,13 +35,65 @@ export async function GET(request: NextRequest) {
 
   try {
     const sql = neon(process.env.DATABASE_URL!)
-    const vehicles = await sql`
-      SELECT * FROM vehicles
-      WHERE store_id = ${storeId} AND status = 'em_estoque'
-      ORDER BY created_at DESC
-    `
-    return NextResponse.json(vehicles)
-  } catch {
+    const sp = request.nextUrl.searchParams
+
+    const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1') || 1)
+    const limit = Math.min(50, Math.max(1, Number.parseInt(sp.get('limit') ?? '12') || 12))
+    const offset = (page - 1) * limit
+
+    const search = (sp.get('search') ?? '').trim()
+    const like = `%${search}%`
+
+    // Contratos podem ser gerados para veículos já marcados como vendidos,
+    // então `?includeSold=1` remove o filtro de estoque.
+    const includeSold = sp.get('includeSold') === '1'
+
+    const [countRows, vehicles] = await Promise.all([
+      sql`
+        SELECT COUNT(*)::int AS total
+        FROM vehicles
+        WHERE store_id = ${storeId} AND (${includeSold} OR status = 'em_estoque')
+          AND (
+            ${search} = ''
+            OR plate ILIKE ${like}
+            OR brand ILIKE ${like}
+            OR model ILIKE ${like}
+            OR COALESCE(version, '') ILIKE ${like}
+          )
+      `,
+      sql`
+        SELECT * FROM vehicles
+        WHERE store_id = ${storeId} AND (${includeSold} OR status = 'em_estoque')
+          AND (
+            ${search} = ''
+            OR plate ILIKE ${like}
+            OR brand ILIKE ${like}
+            OR model ILIKE ${like}
+            OR COALESCE(version, '') ILIKE ${like}
+          )
+        ORDER BY created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `,
+    ])
+
+    const total = Number(countRows[0]?.total ?? 0)
+
+    const normalized = vehicles.map((v) => ({
+      ...v,
+      purchase_value: Number(v.purchase_value) || 0,
+      manufacture_year: Number(v.manufacture_year),
+      model_year: Number(v.model_year),
+    }))
+
+    return NextResponse.json({
+      vehicles: normalized,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    })
+  } catch (error) {
+    console.error('[v0] GET vehicles error:', error)
     return NextResponse.json({ error: 'Erro ao buscar veículos' }, { status: 500 })
   }
 }

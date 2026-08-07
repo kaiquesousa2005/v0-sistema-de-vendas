@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,8 +8,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { Plus, Edit, Trash2, TrendingUp, TrendingDown, FileText, Loader2, Car, Bike, DollarSign, CheckCircle2 } from 'lucide-react'
+import { Plus, Edit, Trash2, TrendingUp, TrendingDown, FileText, Loader2, Car, Bike, DollarSign, CheckCircle2, Search, X } from 'lucide-react'
 import Link from 'next/link'
+import { PaginationBar } from '@/components/dashboard/pagination-bar'
+import { useDebounce } from '@/hooks/use-debounce'
+
+const PAGE_SIZE = 12
 
 interface Vehicle {
   id: number
@@ -41,6 +45,11 @@ const emptyForm = {
 
 export function VehiclesList() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 400)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -55,36 +64,40 @@ export function VehiclesList() {
   const [saleValue, setSaleValue] = useState('')
   const [isMarkingSold, setIsMarkingSold] = useState(false)
 
-  useEffect(() => {
-    fetchVehicles()
-  }, [])
-
-  const fetchVehicles = async () => {
+  const fetchVehicles = useCallback(async (targetPage: number, term: string) => {
     setIsLoading(true)
     try {
-      const response = await fetch('/api/vehicles')
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        limit: String(PAGE_SIZE),
+      })
+      if (term.trim()) params.set('search', term.trim())
+
+      const response = await fetch(`/api/vehicles?${params.toString()}`)
+      const data = await response.json()
       if (!response.ok) {
-        const data = await response.json()
         toast.error(data.error || 'Erro ao buscar veículos')
         return
       }
-      const data = await response.json()
-      const normalized = data
-        .filter((v: Vehicle) => v.status !== 'vendido')
-        .map((v: Vehicle) => ({
-          ...v,
-          purchase_value: Number(v.purchase_value) || 0,
-          manufacture_year: Number(v.manufacture_year),
-          model_year: Number(v.model_year),
-        }))
-      setVehicles(normalized)
+      setVehicles(data.vehicles ?? [])
+      setTotal(Number(data.total) || 0)
+      setTotalPages(Number(data.totalPages) || 1)
     } catch (error) {
       console.error('[v0] fetchVehicles error:', error)
       toast.error('Erro de conexão ao buscar veículos')
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  // Volta para a primeira página sempre que o termo de busca muda
+  useEffect(() => { setPage(1) }, [debouncedSearch])
+
+  useEffect(() => {
+    fetchVehicles(page, debouncedSearch)
+  }, [page, debouncedSearch, fetchVehicles])
+
+  const reload = () => fetchVehicles(page, debouncedSearch)
 
   const handleOpenDialog = (vehicle?: Vehicle) => {
     if (vehicle) {
@@ -144,7 +157,7 @@ export function VehiclesList() {
 
       toast.success(editingId ? 'Veículo atualizado com sucesso' : 'Veículo adicionado com sucesso')
       setOpenDialog(false)
-      fetchVehicles()
+      reload()
     } catch (error) {
       console.error('[v0] handleSubmit error:', error)
       toast.error('Erro de conexão ao salvar veículo')
@@ -164,7 +177,7 @@ export function VehiclesList() {
         return
       }
       toast.success('Veículo excluído com sucesso')
-      fetchVehicles()
+      reload()
     } catch (error) {
       console.error('[v0] handleDelete error:', error)
       toast.error('Erro de conexão ao excluir veículo')
@@ -205,7 +218,7 @@ export function VehiclesList() {
       setSoldDialog(false)
       setSoldVehicle(null)
       setSaleValue('')
-      fetchVehicles()
+      reload()
     } catch (error) {
       console.error('[v0] handleMarkAsSold error:', error)
       toast.error('Erro de conexão ao marcar como vendido')
@@ -214,22 +227,38 @@ export function VehiclesList() {
     }
   }
 
-  if (isLoading && vehicles.length === 0) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
-        <Button onClick={() => handleOpenDialog()}>
+    <div className="space-y-5">
+      {/* Busca + ação */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por placa, marca ou modelo..."
+            className="pl-9 pr-9"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Limpar busca"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <Button onClick={() => handleOpenDialog()} className="shrink-0">
           <Plus className="w-4 h-4 mr-2" />
           Adicionar Veículo
         </Button>
       </div>
+
+      <p className="text-xs text-muted-foreground tabular-nums">
+        {total} veículo{total === 1 ? '' : 's'} em estoque
+      </p>
 
       {/* Dialog Criar/Editar */}
       <Dialog open={openDialog} onOpenChange={setOpenDialog}>
@@ -414,6 +443,12 @@ export function VehiclesList() {
       </Dialog>
 
       {/* Lista de Veículos */}
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Carregando veículos...</span>
+        </div>
+      ) : (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {vehicles.map((vehicle) => (
           <Card key={vehicle.id} className="flex flex-col">
@@ -461,14 +496,30 @@ export function VehiclesList() {
           </Card>
         ))}
       </div>
+      )}
 
       {!isLoading && vehicles.length === 0 && (
         <Card className="text-center py-12">
           <CardContent>
             <Car className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-muted-foreground">Nenhum veículo em estoque. Clique em &quot;Adicionar Veículo&quot; para começar.</p>
+            <p className="text-muted-foreground">
+              {debouncedSearch
+                ? 'Nenhum veículo encontrado para essa busca.'
+                : 'Nenhum veículo em estoque. Clique em "Adicionar Veículo" para começar.'}
+            </p>
           </CardContent>
         </Card>
+      )}
+
+      {!isLoading && (
+        <PaginationBar
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          limit={PAGE_SIZE}
+          onPageChange={setPage}
+          label="veículos"
+        />
       )}
     </div>
   )

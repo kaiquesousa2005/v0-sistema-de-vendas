@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/dashboard/header'
 import { toast } from 'sonner'
-import { Car, Bike, Edit, Loader2, TrendingUp, TrendingDown, DollarSign, ShoppingCart, Wrench, Undo2 } from 'lucide-react'
+import { Car, Bike, Edit, Loader2, TrendingUp, TrendingDown, DollarSign, ShoppingCart, Wrench, Undo2, Search, X } from 'lucide-react'
+import { PaginationBar } from '@/components/dashboard/pagination-bar'
+import { useDebounce } from '@/hooks/use-debounce'
+
+const PAGE_SIZE = 12
+
+interface Summary {
+  totalSales: number
+  totalInvested: number
+  totalExpenses: number
+  netProfit: number
+}
 
 interface SoldVehicle {
   id: number
@@ -29,6 +40,14 @@ interface SoldVehicle {
 
 export function SoldVehiclesList() {
   const [vehicles, setVehicles] = useState<SoldVehicle[]>([])
+  const [summary, setSummary] = useState<Summary>({
+    totalSales: 0, totalInvested: 0, totalExpenses: 0, netProfit: 0,
+  })
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 400)
   const [isLoading, setIsLoading] = useState(true)
 
   // Dialog de editar valor de venda
@@ -38,28 +57,41 @@ export function SoldVehiclesList() {
   const [isSaving, setIsSaving] = useState(false)
   const [revertingId, setRevertingId] = useState<number | null>(null)
 
-  useEffect(() => {
-    fetchSoldVehicles()
-  }, [])
-
-  const fetchSoldVehicles = async () => {
+  const fetchSoldVehicles = useCallback(async (targetPage: number, term: string) => {
     setIsLoading(true)
     try {
-      const response = await fetch('/api/vehicles/sold')
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        limit: String(PAGE_SIZE),
+      })
+      if (term.trim()) params.set('search', term.trim())
+
+      const response = await fetch(`/api/vehicles/sold?${params.toString()}`)
+      const data = await response.json()
       if (!response.ok) {
-        const data = await response.json()
         toast.error(data.error || 'Erro ao buscar veículos vendidos')
         return
       }
-      const data = await response.json()
-      setVehicles(data)
+      setVehicles(data.vehicles ?? [])
+      if (data.summary) setSummary(data.summary)
+      setTotal(Number(data.total) || 0)
+      setTotalPages(Number(data.totalPages) || 1)
     } catch (error) {
       console.error('[v0] fetchSoldVehicles error:', error)
       toast.error('Erro de conexão ao buscar veículos vendidos')
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  // Volta para a primeira página sempre que o termo de busca muda
+  useEffect(() => { setPage(1) }, [debouncedSearch])
+
+  useEffect(() => {
+    fetchSoldVehicles(page, debouncedSearch)
+  }, [page, debouncedSearch, fetchSoldVehicles])
+
+  const reload = () => fetchSoldVehicles(page, debouncedSearch)
 
   const handleRevertToStock = async (vehicle: SoldVehicle) => {
     if (!confirm(`Tem certeza que deseja voltar "${vehicle.brand} ${vehicle.model} (${vehicle.plate})" para o estoque? O valor de venda será removido.`)) return
@@ -77,7 +109,7 @@ export function SoldVehiclesList() {
         return
       }
       toast.success(`${vehicle.brand} ${vehicle.model} voltou ao estoque`)
-      fetchSoldVehicles()
+      reload()
     } catch (error) {
       console.error('[v0] handleRevertToStock error:', error)
       toast.error('Erro de conexão ao reverter venda')
@@ -118,7 +150,7 @@ export function SoldVehiclesList() {
 
       toast.success('Valor de venda atualizado com sucesso')
       setEditDialog(false)
-      fetchSoldVehicles()
+      reload()
     } catch (error) {
       console.error('[v0] handleUpdateSaleValue error:', error)
       toast.error('Erro de conexão ao atualizar veículo')
@@ -127,21 +159,8 @@ export function SoldVehiclesList() {
     }
   }
 
-  const totalRevenue = vehicles.reduce((sum, v) => sum + v.sale_value, 0)
-  const totalCost = vehicles.reduce((sum, v) => sum + v.purchase_value, 0)
-  const totalExpenses = vehicles.reduce((sum, v) => sum + v.total_expenses, 0)
-  const totalProfit = totalRevenue - totalCost - totalExpenses
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
-      </div>
-    )
-  }
+  // Totais vindos do servidor: consideram TODAS as vendas, não só a página atual
+  const { totalSales: totalRevenue, totalInvested: totalCost, totalExpenses, netProfit: totalProfit } = summary
 
   return (
     <div className="min-h-screen bg-background">
@@ -149,7 +168,9 @@ export function SoldVehiclesList() {
       <main className="container mx-auto px-4 py-8 space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Veículos Vendidos</h1>
-          <p className="text-muted-foreground text-sm">Histórico completo de vendas da sua loja</p>
+          <p className="text-muted-foreground text-sm">
+            {total} venda{total === 1 ? '' : 's'} registrada{total === 1 ? '' : 's'}
+          </p>
         </div>
 
         {/* Resumo financeiro */}
@@ -234,7 +255,34 @@ export function SoldVehiclesList() {
           </DialogContent>
         </Dialog>
 
+        {/* Busca */}
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por placa, marca ou modelo..."
+            className="pl-9 pr-9"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Limpar busca"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
         {/* Cards de veículos */}
+        {isLoading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Carregando vendas...</span>
+          </div>
+        ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {vehicles.map((vehicle) => {
             const profit = vehicle.sale_value - vehicle.purchase_value - vehicle.total_expenses
@@ -315,14 +363,30 @@ export function SoldVehiclesList() {
             )
           })}
         </div>
+        )}
 
-        {vehicles.length === 0 && (
+        {!isLoading && vehicles.length === 0 && (
           <Card className="text-center py-12">
             <CardContent>
               <Car className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-              <p className="text-muted-foreground">Nenhum veículo vendido ainda.</p>
+              <p className="text-muted-foreground">
+                {debouncedSearch
+                  ? 'Nenhuma venda encontrada para essa busca.'
+                  : 'Nenhum veículo vendido ainda.'}
+              </p>
             </CardContent>
           </Card>
+        )}
+
+        {!isLoading && (
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            limit={PAGE_SIZE}
+            onPageChange={setPage}
+            label="vendas"
+          />
         )}
       </main>
     </div>
