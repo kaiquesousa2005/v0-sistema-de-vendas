@@ -230,6 +230,62 @@ export function shortDatePt(iso: string | Date | null | undefined): string {
   return `${String(p.d).padStart(2, '0')}/${String(p.m).padStart(2, '0')}/${p.y}`
 }
 
+/** Nome do mês em maiúsculas, ex.: 8 -> "AGOSTO". */
+export function monthNamePt(month: number): string {
+  return MONTHS_PT[month - 1] ?? ''
+}
+
+export interface MonthGroup<T> {
+  /** "2026-08" — inclui o ano para não misturar agostos de anos diferentes. */
+  key: string
+  /** "AGOSTO 2026" */
+  label: string
+  year: number
+  month: number
+  count: number
+  totalValue: number
+  items: T[]
+}
+
+/**
+ * Agrupa contratos por ano+mês de `contract_date`.
+ *
+ * Preserva a ordem de entrada, então uma lista que já vem do banco ordenada por
+ * data decrescente produz grupos do mês mais recente para o mais antigo.
+ */
+export function groupContractsByMonth<
+  T extends { contract_date: string | Date; total_value: number },
+>(rows: T[]): MonthGroup<T>[] {
+  const groups = new Map<string, MonthGroup<T>>()
+
+  for (const row of rows) {
+    const p = dateParts(row.contract_date)
+    if (!p) continue
+
+    const key = `${p.y}-${String(p.m).padStart(2, '0')}`
+    let group = groups.get(key)
+
+    if (!group) {
+      group = {
+        key,
+        label: `${monthNamePt(p.m)} ${p.y}`,
+        year: p.y,
+        month: p.m,
+        count: 0,
+        totalValue: 0,
+        items: [],
+      }
+      groups.set(key, group)
+    }
+
+    group.items.push(row)
+    group.count += 1
+    group.totalValue += Number(row.total_value) || 0
+  }
+
+  return [...groups.values()]
+}
+
 export function formatCurrency(value: number | string | null | undefined): string {
   const n = Number(value) || 0
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
