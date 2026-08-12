@@ -33,51 +33,93 @@ function Val({ children }: { children?: string }) {
   return <>{text || '—'}</>
 }
 
-function VehicleBlock({ vehicle, index, total }: { vehicle: ContractVehicle; index: number; total: number }) {
+/**
+ * Larguras em colunas da grade de 4. Mapa fixo em vez de classe dinâmica
+ * porque o Tailwind precisa ver a classe completa para gerá-la.
+ */
+const SPAN = {
+  1: 'col-span-1',
+  2: 'col-span-2',
+  3: 'col-span-3',
+  4: 'col-span-4',
+} as const
+
+/**
+ * Par rótulo/valor posicionado numa grade de 4 colunas.
+ *
+ * A grade é o que garante o alinhamento: com `flex flex-wrap` cada valor ficava
+ * com a largura do próprio texto e as colunas não casavam entre as linhas.
+ */
+function Field({
+  label,
+  value,
+  span = 1,
+}: {
+  label: string
+  value?: string
+  span?: keyof typeof SPAN
+}) {
   return (
-    <div className="space-y-0.5 break-inside-avoid">
-      {total > 1 && <div className="font-semibold">VEÍCULO {index + 1}:</div>}
-      <div className="flex flex-wrap gap-x-6">
-        <span>
-          <strong>MARCA/MODELO:</strong> <Val>{vehicle.brand_model}</Val>
-        </span>
-        <span>
-          <strong>RENAVAN:</strong> <Val>{vehicle.renavam}</Val>
-        </span>
-        <span>
-          <strong>PLACA:</strong> <Val>{vehicle.plate}</Val>
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-x-6">
-        <span>
-          <strong>CHASSI:</strong> <Val>{vehicle.chassis}</Val>
-        </span>
-        <span>
-          <strong>COR:</strong> <Val>{vehicle.color}</Val>
-        </span>
-        <span>
-          <strong>ANO:</strong> <Val>{vehicle.year}</Val>
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-x-6">
-        <span>
-          <strong>COMBUSTÍVEL:</strong> <Val>{vehicle.fuel}</Val>
-        </span>
-        <span>
-          <strong>KM:</strong> <Val>{formatKm(vehicle.km)}</Val>
-        </span>
-      </div>
+    <div className={`${SPAN[span]} min-w-0`}>
+      <span className="font-bold">{label}:</span>{' '}
+      <span className="break-words">
+        <Val>{value}</Val>
+      </span>
+    </div>
+  )
+}
+
+/** Grade base dos blocos de dados: 4 colunas alinhadas em todo o documento. */
+function FieldGrid({ children }: { children: React.ReactNode }) {
+  return <div className="grid grid-cols-4 gap-x-3 gap-y-px">{children}</div>
+}
+
+function VehicleBlock({
+  vehicle,
+  index,
+  total,
+}: {
+  vehicle: ContractVehicle
+  index: number
+  total: number
+}) {
+  return (
+    <div className="break-inside-avoid border border-black/25 px-1.5 py-1">
+      {total > 1 && <div className="mb-px font-bold">VEÍCULO {index + 1}</div>}
+      <FieldGrid>
+        <Field span={2} label="MARCA/MODELO" value={vehicle.brand_model} />
+        <Field label="PLACA" value={vehicle.plate} />
+        <Field label="ANO" value={vehicle.year} />
+        <Field span={2} label="CHASSI" value={vehicle.chassis} />
+        <Field label="RENAVAN" value={vehicle.renavam} />
+        <Field label="COR" value={vehicle.color} />
+        <Field span={2} label="COMBUSTÍVEL" value={vehicle.fuel} />
+        <Field span={2} label="KM" value={formatKm(vehicle.km)} />
+      </FieldGrid>
     </div>
   )
 }
 
 function SignatureLine({ name, caption, extra }: { name?: string; caption: string; extra?: string }) {
   return (
-    <div className="space-y-0.5 break-inside-avoid">
-      <div className="pt-6">_______________________________</div>
-      {name && <div className="font-semibold">{name}</div>}
+    <div className="break-inside-avoid">
+      {/* Espaço em cima é onde a pessoa assina */}
+      <div className="mt-5 border-t border-black" />
+      {name && <div className="truncate font-semibold">{name}</div>}
       {extra && <div>{extra}</div>}
       <div>{caption}</div>
+    </div>
+  )
+}
+
+/** Assinatura de testemunha, com linhas para preencher à mão. */
+function WitnessLine({ index }: { index: number }) {
+  return (
+    <div className="break-inside-avoid">
+      <div className="mt-5 border-t border-black" />
+      <div>TESTEMUNHA {index}</div>
+      <div>NOME: ______________________</div>
+      <div>CPF: _______________________</div>
     </div>
   )
 }
@@ -102,7 +144,7 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
 
   return (
     <div
-      className="contract-sheet mx-auto w-full max-w-[210mm] bg-white px-[14mm] py-[12mm] text-[10.5px] leading-[1.45] text-black shadow-sm print:max-w-none print:shadow-none"
+      className="contract-sheet mx-auto w-full max-w-[210mm] bg-white px-[11mm] py-[7mm] text-[9px] leading-[1.35] text-black shadow-sm print:max-w-none print:shadow-none"
       style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
     >
       {/* Cabeçalho da loja. <img> puro para não depender de otimização/lazy
@@ -111,42 +153,32 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
       <img
         src="/images/contract-header.png"
         alt="MCar Veículos"
-        className="mb-3 block w-full"
+        className="mb-1.5 block w-full"
         loading="eager"
       />
 
-      {store.address && <p className="mb-3 text-[10px] font-semibold">{store.address}</p>}
+      {store.address && <p className="mb-1.5 text-[9px] font-semibold">{store.address}</p>}
 
-      <h1 className="mb-3 text-center text-[13px] font-bold tracking-tight">{title}</h1>
+      <h1 className="mb-1.5 text-center text-[12px] font-bold tracking-tight">{title}</h1>
 
-      {/* Comprador */}
-      <section className="mb-3 space-y-0.5">
-        <div>
-          <strong>COMPRADOR:</strong> <Val>{buyer.name}</Val>
-        </div>
-        <div className="flex flex-wrap gap-x-6">
-          <span>
-            <strong>CPF:</strong> <Val>{formatCpf(buyer.cpf)}</Val>
-          </span>
-          <span>
-            <strong>TEL:</strong> <Val>{formatPhone(buyer.phone)}</Val>
-          </span>
-        </div>
-        <div>
-          <strong>DATA DE NASCIMENTO:</strong> <Val>{longDatePt(buyer.birth_date)}</Val>
-        </div>
-        <div>
-          <strong>ENDERECO:</strong> <Val>{buyer.address}</Val>
-        </div>
+      {/* Comprador — mesma grade de 4 colunas dos veículos */}
+      <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+        <FieldGrid>
+          <Field span={2} label="COMPRADOR" value={buyer.name} />
+          <Field label="CPF" value={formatCpf(buyer.cpf)} />
+          <Field label="TEL" value={formatPhone(buyer.phone)} />
+          <Field span={3} label="ENDERECO" value={buyer.address} />
+          <Field label="NASCIMENTO" value={longDatePt(buyer.birth_date)} />
+        </FieldGrid>
       </section>
 
       {/* Cláusula 1ª — objeto */}
-      <h2 className="mb-1 font-bold">DO OBJETO DO CONTRATO</h2>
+      <h2 className="font-bold">DO OBJETO DO CONTRATO</h2>
       <p className="mb-1">
         <strong>Cláusula 1ª.</strong> O presente contrato tem como OBJETO,{' '}
         {isPlural ? 'os veículos abaixo descriminados' : 'o veículo abaixo descriminado'}:
       </p>
-      <section className="mb-3 space-y-2">
+      <section className="mb-1.5 space-y-1">
         {soldList.map((vehicle, i) => (
           <VehicleBlock key={i} vehicle={vehicle} index={i} total={soldList.length} />
         ))}
@@ -154,7 +186,7 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
 
       {/* Veículos recebidos na troca */}
       {trade_ins.length > 0 && (
-        <section className="mb-3 space-y-2">
+        <section className="mb-1.5 space-y-1">
           <h3 className="font-bold">
             {trade_ins.length > 1 ? 'RECEBENDO OS VEICULOS:' : 'RECEBENDO O VEICULO:'}
           </h3>
@@ -165,34 +197,38 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
       )}
 
       {/* Cláusula 2ª — pagamento */}
-      <p className="mb-1">
+      <p>
         <strong>Cláusula 2ª.</strong> O COMPRADOR pagará ao VENDEDOR, pela compra do veículo da
         seguinte forma.
       </p>
-      <section className="mb-3 space-y-0.5">
-        <div className="font-bold">NEGOCIACAO:</div>
-        <div>
-          <Val>{negotiation.summary}</Val>
+      <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="min-w-0">
+            <span className="font-bold">NEGOCIACAO:</span>{' '}
+            <span className="break-words">
+              <Val>{negotiation.summary}</Val>
+            </span>
+          </div>
+          <div className="shrink-0 font-bold tabular-nums">
+            {formatCurrency(negotiation.total_value)}
+          </div>
         </div>
-        <div className="font-bold">{formatCurrency(negotiation.total_value)}</div>
         {negotiation.observations && (
           <p className="whitespace-pre-wrap">
             <strong>OBS:</strong> {negotiation.observations}
           </p>
         )}
+        {delivery.date && (
+          <p className="font-semibold">
+            VEÍCULO ENTREGUE NA DATA: {longDatePt(delivery.date)}
+            {delivery.time ? ` ÀS ${delivery.time}` : ''}
+          </p>
+        )}
       </section>
 
-      {/* Entrega */}
-      {delivery.date && (
-        <p className="mb-3 font-semibold">
-          VEÍCULO ENTREGUE NA DATA: {longDatePt(delivery.date)}
-          {delivery.time ? ` ÀS ${delivery.time}` : ''}
-        </p>
-      )}
-
-      {/* Cláusulas fixas */}
-      <h2 className="mb-1 font-bold">FICA COMBINADO ENTRE AS PARTES:</h2>
-      <ol className="mb-4 space-y-1.5 text-justify">
+      {/* Cláusulas fixas — o maior bloco de texto, em corpo menor */}
+      <h2 className="font-bold">FICA COMBINADO ENTRE AS PARTES:</h2>
+      <ol className="mb-2 space-y-0.5 text-justify text-[8px] leading-[1.3]">
         <li>
           A) A PARTIR DESTA DATA, TODO E QUALQUER DANO QUE DOS REFERIDOS VEÍCULO VENHA CAUSAR A
           TERCEIROS, FICARÁ DE RESPONSABILIDADE CIVIL E CRIMINAL DO COMPRADOR E TAMBÉM A PONTUAÇÃO
@@ -246,33 +282,22 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
       </ol>
 
       {/* Local e data */}
-      <p className="mb-2 font-semibold">
+      <p className="mb-1 font-semibold">
         {store.city || 'FORTALEZA'}, {longDatePt(contractDate)}
       </p>
 
-      {/* Assinaturas */}
-      <section className="space-y-1">
+      {/* Assinaturas em 2x2. Sem prefixo responsivo (`sm:`) de propósito: a
+          folha tem largura fixa de 210mm, então um breakpoint de viewport
+          faria o PDF sair diferente conforme o tamanho da janela. */}
+      <section className="grid grid-cols-2 gap-x-10 gap-y-1">
         <SignatureLine name={store.seller_name} caption="VENDEDOR" />
         <SignatureLine
           name={buyer.name}
           extra={buyer.cpf ? `CPF: ${formatCpf(buyer.cpf)}` : undefined}
           caption="COMPRADOR"
         />
-
-        <div className="grid gap-x-8 gap-y-1 sm:grid-cols-2">
-          <div className="break-inside-avoid">
-            <div className="pt-6">_______________________________</div>
-            <div>TESTEMUNHA 1</div>
-            <div>NOME: _______________________________</div>
-            <div>CPF: _______________________________</div>
-          </div>
-          <div className="break-inside-avoid">
-            <div className="pt-6">_______________________________</div>
-            <div>TESTEMUNHA 2</div>
-            <div>NOME: _______________________________</div>
-            <div>CPF: _______________________________</div>
-          </div>
-        </div>
+        <WitnessLine index={1} />
+        <WitnessLine index={2} />
       </section>
     </div>
   )
