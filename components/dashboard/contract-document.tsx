@@ -157,8 +157,6 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
         loading="eager"
       />
 
-      {store.address && <p className="mb-1.5 text-[9px] font-semibold">{store.address}</p>}
-
       <h1 className="mb-1.5 text-center text-[12px] font-bold tracking-tight">{title}</h1>
 
       {/* Comprador — mesma grade de 4 colunas dos veículos */}
