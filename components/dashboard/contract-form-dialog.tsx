@@ -788,50 +788,50 @@ export function ContractFormDialog({
                           label="Marca/Modelo"
                           value={row.brand_model}
                           onChange={(v) => updateTrade(row.key, { brand_model: v })}
-                          placeholder="VW SAVEIRO CD 1.6"
+                          placeholder="MARCA/MODELO DO VEÍCULO RECEBIDO"
                           className="sm:col-span-2"
                         />
                         <Field
                           label="Placa"
                           value={row.plate}
                           onChange={(v) => updateTrade(row.key, { plate: v })}
-                          placeholder="PMW2J33"
+                          placeholder="PLACA DO VEÍCULO RECEBIDO"
                         />
                         <Field
                           label="Renavam"
                           value={row.renavam}
                           onChange={(v) => updateTrade(row.key, { renavam: v })}
-                          placeholder="01151711460"
+                          placeholder="RENAVAN DO VEÍCULO RECEBIDO"
                         />
                         <Field
                           label="Chassi"
                           value={row.chassis}
                           onChange={(v) => updateTrade(row.key, { chassis: v })}
-                          placeholder="9BWJB45U4JP091533"
+                          placeholder="CHASSI DO VEÍCULO RECEBIDO"
                         />
                         <Field
                           label="Cor"
                           value={row.color}
                           onChange={(v) => updateTrade(row.key, { color: v })}
-                          placeholder="BRANCA"
+                          placeholder="COR"
                         />
                         <Field
                           label="Ano"
                           value={row.year}
                           onChange={(v) => updateTrade(row.key, { year: v })}
-                          placeholder="2018/2018"
+                          placeholder="FABRICAÇÃO/MODELO"
                         />
                         <Field
                           label="Combustível"
                           value={row.fuel}
                           onChange={(v) => updateTrade(row.key, { fuel: v })}
-                          placeholder="FLEX"
+                          placeholder="FLEX/DIESEL/GASOLINA"
                         />
                         <Field
                           label="KM"
                           value={row.km}
                           onChange={(v) => updateTrade(row.key, { km: v })}
-                          placeholder="98000"
+                          placeholder="00000"
                           type="number"
                           className="sm:col-span-2"
                         />
@@ -849,14 +849,14 @@ export function ContractFormDialog({
                   label="Forma de negociação"
                   value={summary}
                   onChange={setSummary}
-                  placeholder="AVISTA + CARRO + BOLETO"
+                  placeholder="NEGOCIAÇÃO (AVISTA + FINANCIAMENTO)"
                   required
                 />
                 <Field
                   label="Valor total (R$)"
                   value={totalValue}
                   onChange={setTotalValue}
-                  placeholder="61800.00"
+                  placeholder="VALOR DA VENDA"
                   type="number"
                   required
                 />
@@ -866,7 +866,7 @@ export function ContractFormDialog({
                 label="Observações da negociação"
                 value={observations}
                 onChange={setObservations}
-                placeholder="RECEBENDO 1.800,00 NO PIX DA LOJA + RECEBENDO O SAVEIRO 35.000,00 + 25.000,00 NO BOLETO BANCARIO EM 24X 1.500,00..."
+                placeholder="**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO..."
                 hint="Aparece no contrato como OBS, logo abaixo do valor. Detalhe entradas, parcelas, descontos e prazos."
                 rows={5}
               />
