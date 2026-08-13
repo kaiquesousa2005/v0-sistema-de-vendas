@@ -221,7 +221,7 @@ export function ContractsList() {
                   </p>
                 </button>
 
-                <div className="flex shrink-0 flex-col gap-1">
+                <div className="flex shrink-0 gap-1">
                   <Button
                     variant="ghost"
                     size="sm"
