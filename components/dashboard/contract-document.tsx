@@ -214,7 +214,7 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
             </span>
           </div>
           <div className="shrink-0 font-bold tabular-nums">
-            VALOR DO VEÍCULO: {formatCurrency(negotiation.total_value)}
+            VALOR: {formatCurrency(negotiation.total_value)}
           </div>
         </div>
         {negotiation.observations && (
