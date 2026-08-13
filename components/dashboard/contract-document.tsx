@@ -276,7 +276,7 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
       </ol>
 
       {/* Local e data */}
-      <p className="mb-1 font-semibold">
+      <p className="mb-1 text-center font-semibold">
         {store.city || 'FORTALEZA'}, {longDatePt(contractDate)}
       </p>
 
