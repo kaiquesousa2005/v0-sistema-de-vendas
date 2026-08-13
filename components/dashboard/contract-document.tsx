@@ -222,12 +222,6 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
             <strong>OBS:</strong> {negotiation.observations}
           </p>
         )}
-        {delivery.date && (
-          <p className="font-semibold">
-            VEÍCULO ENTREGUE NA DATA: {longDatePt(delivery.date)}
-            {delivery.time ? ` ÀS ${delivery.time}` : ''}
-          </p>
-        )}
       </section>
 
       {/* Cláusulas fixas — o maior bloco de texto, em corpo menor */}
