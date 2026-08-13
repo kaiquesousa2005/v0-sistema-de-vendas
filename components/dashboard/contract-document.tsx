@@ -180,6 +180,12 @@ export function ContractDocument({ title, data, contractDate }: ContractDocument
         {soldList.map((vehicle, i) => (
           <VehicleBlock key={i} vehicle={vehicle} index={i} total={soldList.length} />
         ))}
+                {delivery.date && (
+          <p className="font-semibold">
+            VEÍCULO ENTREGUE NA DATA: {longDatePt(delivery.date)}
+            {delivery.time ? ` ÀS ${delivery.time}` : ''}
+          </p>
+        )}
       </section>
 
       {/* Veículos recebidos na troca */}
