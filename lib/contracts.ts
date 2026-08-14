@@ -230,6 +230,36 @@ export function shortDatePt(iso: string | Date | null | undefined): string {
   return `${String(p.d).padStart(2, '0')}/${String(p.m).padStart(2, '0')}/${p.y}`
 }
 
+/** Data de hoje em "AAAA-MM-DD", no fuso local. */
+export function todayIso(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+/**
+ * Campos essenciais ausentes num snapshot de contrato. Lista vazia = completo.
+ *
+ * Contratos podem ser gravados incompletos (quando o usuário sai do formulário
+ * no meio e escolhe salvar), então a "incompletude" é derivada do próprio
+ * snapshot em vez de guardada numa coluna: se depois ele preencher o que
+ * faltava pela edição, o aviso desaparece sozinho, sem migração nem backfill.
+ */
+export function missingContractFields(data: unknown): string[] {
+  const d = normalizeSaleData(data)
+  const missing: string[] = []
+
+  if (!d.buyer.name) missing.push('Comprador')
+  if (d.vehicles.length === 0) missing.push('Veículo')
+  if (!d.negotiation.summary) missing.push('Forma de negociação')
+  if (!d.negotiation.total_value) missing.push('Valor')
+  if (!d.store.seller_name) missing.push('Vendedor')
+
+  return missing
+}
+
 /** Nome do mês em maiúsculas, ex.: 8 -> "AGOSTO". */
 export function monthNamePt(month: number): string {
   return MONTHS_PT[month - 1] ?? ''

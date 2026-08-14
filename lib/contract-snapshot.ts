@@ -88,6 +88,16 @@ export const salePreviewSchema = z.object({
   store: baseFields.store.partial().default({}),
 })
 
+/**
+ * Rascunho gravável: as mesmas regras frouxas da prévia, mas o resultado vai
+ * para o banco. É o schema usado quando o usuário fecha o modal no meio do
+ * preenchimento e escolhe salvar o que já digitou.
+ *
+ * Nenhum campo é obrigatório aqui de propósito — a validação "de verdade"
+ * continua no `saleSchema`, aplicada quando o contrato é finalizado.
+ */
+export const saleDraftSchema = salePreviewSchema
+
 export type SaleInput = z.infer<typeof saleSchema>
 export type SalePreviewInput = z.infer<typeof salePreviewSchema>
 
@@ -221,7 +231,12 @@ export async function buildSaleSnapshot(
   }
 }
 
-/** Persiste os dados da loja para pré-preencher os próximos contratos. */
+/**
+ * Persiste os dados da loja para pré-preencher os próximos contratos.
+ *
+ * Campo vazio nunca sobrescreve o valor já guardado: salvar um rascunho no meio
+ * do preenchimento não pode apagar o endereço/vendedor lembrados.
+ */
 export async function rememberStoreDefaults(
   sql: Sql,
   storeId: number,
@@ -229,9 +244,9 @@ export async function rememberStoreDefaults(
 ) {
   await sql`
     UPDATE stores
-    SET address = ${store.address || null},
-        city = ${store.city || null},
-        seller_name = ${store.seller_name || null}
+    SET address = COALESCE(NULLIF(${store.address}, ''), address),
+        city = COALESCE(NULLIF(${store.city}, ''), city),
+        seller_name = COALESCE(NULLIF(${store.seller_name}, ''), seller_name)
     WHERE id = ${storeId}
   `
 }
