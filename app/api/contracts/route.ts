@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { jwtVerify } from 'jose'
 import { z } from 'zod'
-import { CONTRACT_TYPES } from '@/lib/contracts'
-import { buildSaleSnapshot, rememberStoreDefaults, saleSchema } from '@/lib/contract-snapshot'
+import { CONTRACT_TYPES, todayIso } from '@/lib/contracts'
+import {
+  buildSaleSnapshot,
+  rememberStoreDefaults,
+  saleDraftSchema,
+  saleSchema,
+} from '@/lib/contract-snapshot'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
@@ -95,7 +100,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const data = saleSchema.parse(body)
+    // Rascunho: o usuário saiu do formulário no meio e optou por guardar o que
+    // já preencheu. Aceita campos em branco; a validação estrita fica para
+    // quando ele finalizar o contrato.
+    const isDraft = body?.draft === true
+    const data = isDraft ? saleDraftSchema.parse(body) : saleSchema.parse(body)
     const sql = neon(process.env.DATABASE_URL!)
 
     const { snapshot, customerName, vehicleLabel, vehicleIds } = await buildSaleSnapshot(
@@ -104,10 +113,10 @@ export async function POST(request: NextRequest) {
       data,
     )
 
-    if (!customerName) {
+    if (!isDraft && !customerName) {
       return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
     }
-    if (vehicleIds.length === 0) {
+    if (!isDraft && vehicleIds.length === 0) {
       return NextResponse.json({ error: 'Veículo não encontrado' }, { status: 404 })
     }
 
@@ -135,9 +144,9 @@ export async function POST(request: NextRequest) {
             store_id, type, contract_number, customer_id, vehicle_id,
             customer_name, vehicle_label, total_value, contract_date, data
           ) VALUES (
-            ${storeId}, 'venda', ${contractNumber}, ${data.customer_id}, ${vehicleIds[0]},
+            ${storeId}, 'venda', ${contractNumber}, ${data.customer_id || null}, ${vehicleIds[0] ?? null},
             ${customerName}, ${vehicleLabel}, ${snapshot.negotiation.total_value},
-            ${data.contract_date}, ${JSON.stringify(snapshot)}::jsonb
+            ${data.contract_date || todayIso()}, ${JSON.stringify(snapshot)}::jsonb
           )
           RETURNING id, type, contract_number, customer_name, vehicle_label, total_value, contract_date
         `

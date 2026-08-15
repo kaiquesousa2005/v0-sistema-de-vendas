@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { jwtVerify } from 'jose'
 import { z } from 'zod'
-import { buildSaleSnapshot, rememberStoreDefaults, saleSchema } from '@/lib/contract-snapshot'
+import { todayIso } from '@/lib/contracts'
+import {
+  buildSaleSnapshot,
+  rememberStoreDefaults,
+  saleDraftSchema,
+  saleSchema,
+} from '@/lib/contract-snapshot'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
@@ -61,7 +67,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   try {
-    const data = saleSchema.parse(await request.json())
+    const body = await request.json()
+
+    // Mesma regra do POST: rascunho grava incompleto, finalização valida tudo.
+    const isDraft = body?.draft === true
+    const data = isDraft ? saleDraftSchema.parse(body) : saleSchema.parse(body)
     const sql = neon(process.env.DATABASE_URL!)
 
     const { snapshot, customerName, vehicleLabel, vehicleIds } = await buildSaleSnapshot(
@@ -70,10 +80,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       data,
     )
 
-    if (!customerName) {
+    if (!isDraft && !customerName) {
       return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
     }
-    if (vehicleIds.length === 0) {
+    if (!isDraft && vehicleIds.length === 0) {
       return NextResponse.json({ error: 'Veículo não encontrado' }, { status: 404 })
     }
 
@@ -82,12 +92,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     // O número e o tipo do contrato não mudam na edição
     const rows = await sql`
       UPDATE contracts
-      SET customer_id = ${data.customer_id},
-          vehicle_id = ${vehicleIds[0]},
+      SET customer_id = ${data.customer_id || null},
+          vehicle_id = ${vehicleIds[0] ?? null},
           customer_name = ${customerName},
           vehicle_label = ${vehicleLabel},
           total_value = ${snapshot.negotiation.total_value},
-          contract_date = ${data.contract_date},
+          contract_date = ${data.contract_date || todayIso()},
           data = ${JSON.stringify(snapshot)}::jsonb,
           updated_at = NOW()
       WHERE id = ${contractId} AND store_id = ${storeId}

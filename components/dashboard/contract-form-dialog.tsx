@@ -12,6 +12,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { EntityPicker, type PickerItem } from '@/components/dashboard/entity-picker'
 import { ContractDocument } from '@/components/dashboard/contract-document'
 import { FitToWidth } from '@/components/dashboard/fit-to-width'
@@ -22,6 +32,7 @@ import {
   formatCpf,
   normalizeSaleData,
   toIsoDate,
+  todayIso,
   type ContractType,
   type SaleContractData,
 } from '@/lib/contracts'
@@ -186,11 +197,6 @@ const newTradeRow = (): TradeRow => ({
   km: '',
 })
 
-function todayIso() {
-  // en-CA formata como YYYY-MM-DD respeitando o fuso local
-  return new Date().toLocaleDateString('en-CA')
-}
-
 interface ContractFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -211,6 +217,8 @@ export function ContractFormDialog({
   const [type, setType] = useState<ContractType>('venda')
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  /** Confirmação exibida quando o usuário tenta sair com o formulário preenchido. */
+  const [confirmExit, setConfirmExit] = useState(false)
 
   const [customer, setCustomer] = useState<PickerItem | null>(null)
   const [sold, setSold] = useState<SoldRow[]>([newSoldRow()])
@@ -409,9 +417,79 @@ export function ContractFormDialog({
     setStep('form')
   }
 
+  const closeNow = useCallback(() => {
+    setConfirmExit(false)
+    onOpenChange(false)
+    resetForm()
+  }, [onOpenChange, resetForm])
+
+  /**
+   * Há algo digitado que seria perdido ao fechar? Endereço/cidade/vendedor não
+   * entram na conta porque vêm pré-carregados do perfil da loja, não do usuário.
+   */
+  const hasContent =
+    customer != null ||
+    sold.some((row) => row.item) ||
+    trades.length > 0 ||
+    summary.trim() !== '' ||
+    totalValue.trim() !== '' ||
+    observations.trim() !== ''
+
+  /**
+   * Intercepta todas as formas de fechar (X, clique fora e Esc) — o Radix
+   * encaminha as três para cá. Com conteúdo digitado, pede confirmação em vez
+   * de descartar na hora.
+   *
+   * Só vale para criação: na edição o contrato já está salvo, então fechar não
+   * perde o registro, apenas os ajustes não confirmados.
+   */
   const handleClose = (nextOpen: boolean) => {
-    onOpenChange(nextOpen)
-    if (!nextOpen) resetForm()
+    if (nextOpen) {
+      onOpenChange(true)
+      return
+    }
+    if (!isEditing && hasContent) {
+      setConfirmExit(true)
+      return
+    }
+    closeNow()
+  }
+
+  /**
+   * Grava o que já foi preenchido, sem passar pela validação de contrato
+   * finalizado. Em caso de erro o modal fica aberto de propósito: fechar aqui
+   * jogaria fora justamente o que o usuário pediu para preservar.
+   */
+  const handleSaveDraft = async () => {
+    setIsSaving(true)
+    try {
+      const response = await fetch(isEditing ? `/api/contracts/${contractId}` : '/api/contracts', {
+        method: isEditing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...buildPayload(), draft: true }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        toast.error(data.error || 'Erro ao salvar contrato')
+        setConfirmExit(false)
+        return
+      }
+
+      toast.success(
+        data.contract_number
+          ? `Contrato ${data.contract_number} salvo incompleto`
+          : 'Contrato salvo incompleto',
+      )
+      closeNow()
+      onSaved(Number(data.id))
+    } catch (error) {
+      console.error('[v0] save draft error:', error)
+      toast.error('Erro de conexão ao salvar contrato')
+      setConfirmExit(false)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   /** Payload enviado tanto para a prévia quanto para gravar. */
@@ -517,7 +595,10 @@ export function ContractFormDialog({
               // arredondamento e sem translate de centralização. O scroll fica
               // na área do documento, não no diálogo.
               'flex h-screen max-h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 !rounded-none border-0 p-0 top-0 left-0 sm:max-w-none'
-            : 'max-h-[90vh] max-w-3xl overflow-y-auto'
+            : // `sm:max-w-*` é obrigatório aqui: o DialogContent já traz
+              // `sm:max-w-lg` e o tailwind-merge trata prefixo de variante como
+              // chave própria, então só `max-w-6xl` não sobrescreveria nada.
+              'max-h-[92vh] w-[96vw] max-w-6xl overflow-y-auto sm:max-w-6xl'
         }
       >
         {isLoading ? (
