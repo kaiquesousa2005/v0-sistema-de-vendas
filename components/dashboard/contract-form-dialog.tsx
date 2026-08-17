@@ -586,7 +586,8 @@ export function ContractFormDialog({
   const showTypeStep = step === 'type' && !isEditing
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
         showCloseButton={step !== 'preview'}
         className={
@@ -1035,7 +1036,46 @@ export function ContractFormDialog({
             </div>
           </form>
         )}
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmação ao sair com o formulário preenchido. Fica fora do Dialog
+          para os dois não disputarem o mesmo focus trap do Radix. */}
+      <AlertDialog open={confirmExit} onOpenChange={setConfirmExit}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sair sem finalizar o contrato?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O contrato ainda não foi finalizado. Você pode salvar o que já preencheu e continuar
+              depois pela edição, ou descartar tudo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel disabled={isSaving}>Continuar preenchendo</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeNow}
+              disabled={isSaving}
+              className="sm:mt-0"
+            >
+              Descartar
+            </Button>
+            <AlertDialogAction
+              onClick={(event) => {
+                // Sem isso o Radix fecharia o alerta antes de a gravação terminar
+                event.preventDefault()
+                void handleSaveDraft()
+              }}
+              disabled={isSaving}
+              className="gap-2"
+            >
+              {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Sim, salvar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

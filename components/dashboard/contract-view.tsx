@@ -8,8 +8,13 @@ import { Header } from '@/components/dashboard/header'
 import { ContractDocument } from '@/components/dashboard/contract-document'
 import { ContractFormDialog } from '@/components/dashboard/contract-form-dialog'
 import { FitToWidth } from '@/components/dashboard/fit-to-width'
-import { CONTRACT_TYPES, shortDatePt, type ContractType } from '@/lib/contracts'
-import { ArrowLeft, Download, Loader2, Pencil } from 'lucide-react'
+import {
+  CONTRACT_TYPES,
+  missingContractFields,
+  shortDatePt,
+  type ContractType,
+} from '@/lib/contracts'
+import { AlertTriangle, ArrowLeft, Download, Loader2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Contract {
@@ -105,6 +110,9 @@ export function ContractView({ contractId }: { contractId: number }) {
   }
 
   const config = CONTRACT_TYPES[contract.type]
+  // Contratos salvos incompletos continuam abrindo normalmente; o que falta
+  // aparece como aviso em vez de virar erro de renderização.
+  const missing = missingContractFields(contract.data)
 
   return (
     <div className="min-h-screen bg-muted/40 print:bg-white">
@@ -154,6 +162,28 @@ export function ContractView({ contractId }: { contractId: number }) {
           </div>
         </div>
       </div>
+
+      {/* Aviso de contrato incompleto — fora da folha, então não sai no PDF */}
+      {missing.length > 0 && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 print:hidden">
+          <div className="container mx-auto flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+            <p className="text-xs text-foreground">
+              <span className="font-semibold">Contrato incompleto.</span> Falta preencher:{' '}
+              {missing.join(', ')}.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => setIsEditOpen(true)}
+            >
+              <Pencil className="h-3 w-3" />
+              Completar
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* O PDF é gerado a partir do .contract-sheet dentro deste ref. O scale
           do FitToWidth é apenas visual e não afeta a captura. */}
