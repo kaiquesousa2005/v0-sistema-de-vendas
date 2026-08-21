@@ -7,6 +7,14 @@ export const CONTRACT_TYPES = {
     description: 'Venda de veículo ao cliente, com negociação, garantia e entrega.',
     available: true,
   },
+  compra: {
+    label: 'Contrato de Compra',
+    short: 'Compra',
+    prefix: 'CMP',
+    title: 'CONTRATO DE COMPRA DE VEICULOS',
+    description: 'Compra de veículo de um cliente, com pagamento e recebimento.',
+    available: true,
+  },
   devolucao: {
     label: 'Contrato de Devolução',
     short: 'Devolução',
@@ -49,6 +57,28 @@ export function isContractType(value: string): value is ContractType {
   return Object.prototype.hasOwnProperty.call(CONTRACT_TYPES, value)
 }
 
+/** Tipos que já podem ser criados/gravados. */
+export const AVAILABLE_CONTRACT_TYPES = CONTRACT_TYPE_KEYS.filter((k) => CONTRACT_TYPES[k].available)
+
+/**
+ * Papéis das partes conforme o tipo de contrato.
+ *
+ * Na venda a loja é a VENDEDORA e o cliente é o COMPRADOR. Na compra os papéis
+ * se invertem: a loja compra o veículo do cliente, que passa a ser o VENDEDOR.
+ * O snapshot guarda o cliente sempre na mesma chave (`buyer`), então é este
+ * mapa que decide os rótulos do documento e do formulário.
+ */
+export function contractRoles(type: ContractType) {
+  const storeIsBuyer = type === 'compra'
+  return {
+    /** Papel do cliente no contrato. */
+    customer: storeIsBuyer ? 'VENDEDOR' : 'COMPRADOR',
+    /** Papel da loja no contrato. */
+    store: storeIsBuyer ? 'COMPRADOR' : 'VENDEDOR',
+    storeIsBuyer,
+  }
+}
+
 /* ---------- Snapshot armazenado em contracts.data ---------- */
 
 export interface ContractParty {
@@ -89,8 +119,15 @@ export const SALE_WARRANTY = { days: 90, daysText: 'NOVENTA', km: 5000 } as cons
 
 /** Formato canônico usado pelo documento e pelo formulário. */
 export interface SaleContractData {
+  /**
+   * A contraparte da loja — sempre o cliente cadastrado.
+   *
+   * A chave se chama `buyer` porque nasceu no contrato de venda e já existe em
+   * snapshots gravados; no contrato de compra ela guarda o VENDEDOR. Use
+   * `contractRoles(type)` para saber o rótulo correto em cada caso.
+   */
   buyer: ContractParty
-  /** Veículos vendidos ao comprador (1 ou mais). */
+  /** Veículos objeto do contrato: vendidos ao cliente ou comprados dele. */
   vehicles: ContractVehicle[]
   /** Veículos recebidos como parte do pagamento (troca). */
   trade_ins: ContractVehicle[]
