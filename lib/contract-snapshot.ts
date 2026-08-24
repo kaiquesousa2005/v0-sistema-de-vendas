@@ -33,9 +33,17 @@ const soldVehicleSchema = z.object({
 })
 
 const baseFields = {
-  type: z.literal('venda').default('venda'),
+  type: z.enum(['venda', 'compra']).default('venda'),
   customer_id: z.coerce.number().int().positive(),
   vehicles: z.array(soldVehicleSchema),
+  /**
+   * Veículos do contrato digitados à mão, sem passar pelo estoque.
+   *
+   * Existe para a compra: o carro que a loja está comprando muitas vezes ainda
+   * não foi cadastrado. No snapshot eles são mesclados em `vehicles`, então o
+   * documento não precisa saber de onde cada veículo veio.
+   */
+  manual_vehicles: z.array(manualVehicleSchema).default([]),
   trade_ins: z.array(manualVehicleSchema).default([]),
   contract_date: z.string().trim().default(''),
 
@@ -57,23 +65,36 @@ const baseFields = {
   }),
 }
 
-/** Salvar exige comprador, veículo, negociação e vendedor. */
-export const saleSchema = z.object({
-  ...baseFields,
-  customer_id: z.coerce.number().int().positive('Selecione o comprador'),
-  vehicles: z.array(soldVehicleSchema).min(1, 'Selecione ao menos um veículo vendido'),
-  contract_date: z.string().min(10, 'Data do contrato obrigatória'),
-  negotiation: z.object({
-    summary: z.string().trim().min(1, 'Descreva a forma de negociação'),
-    total_value: z.coerce.number().nonnegative('Valor inválido'),
-    observations: z.string().trim().default(''),
-  }),
-  store: z.object({
-    address: z.string().trim().default(''),
-    city: z.string().trim().default(''),
-    seller_name: z.string().trim().min(1, 'Informe o nome do vendedor'),
-  }),
-})
+/** Salvar exige cliente, veículo, negociação e vendedor. */
+export const saleSchema = z
+  .object({
+    ...baseFields,
+    customer_id: z.coerce.number().int().positive('Selecione o cliente'),
+    contract_date: z.string().min(10, 'Data do contrato obrigatória'),
+    negotiation: z.object({
+      summary: z.string().trim().min(1, 'Descreva a forma de negociação'),
+      total_value: z.coerce.number().nonnegative('Valor inválido'),
+      observations: z.string().trim().default(''),
+    }),
+    store: z.object({
+      address: z.string().trim().default(''),
+      city: z.string().trim().default(''),
+      seller_name: z.string().trim().min(1, 'Informe o nome do vendedor'),
+    }),
+  })
+  // Checagem cruzada em vez de `vehicles.min(1)`: na compra o veículo pode vir
+  // do estoque OU ser digitado, e exigir a lista do estoque bloquearia o
+  // preenchimento manual.
+  .superRefine((value, ctx) => {
+    const hasVehicle = value.vehicles.length > 0 || value.manual_vehicles.length > 0
+    if (!hasVehicle) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['vehicles'],
+        message: 'Informe ao menos um veículo',
+      })
+    }
+  })
 
 /**
  * A prévia roda com o formulário pela metade, então tudo é opcional:
