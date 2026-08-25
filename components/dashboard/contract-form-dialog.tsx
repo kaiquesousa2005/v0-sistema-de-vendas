@@ -49,6 +49,7 @@ import {
   Plus,
   Repeat,
   ShieldCheck,
+  ShoppingCart,
   Trash2,
   Undo2,
   User,
@@ -57,6 +58,7 @@ import { toast } from 'sonner'
 
 const TYPE_ICONS: Record<ContractType, typeof FileText> = {
   venda: FileSignature,
+  compra: ShoppingCart,
   devolucao: Undo2,
   repasse: Repeat,
   consignacao: ArrowLeftRight,
@@ -625,7 +627,9 @@ export function ContractFormDialog({
             <div className="grid gap-3 sm:grid-cols-2">
               {CONTRACT_TYPE_KEYS.map((key) => {
                 const cfg = CONTRACT_TYPES[key]
-                const Icon = TYPE_ICONS[key]
+                // Fallback: um tipo novo sem ícone mapeado deixaria `Icon`
+                // undefined e derrubaria a tela inteira do seletor.
+                const Icon = TYPE_ICONS[key] ?? FileText
                 return (
                   <button
                     key={key}
@@ -705,6 +709,7 @@ export function ContractFormDialog({
                   title={CONTRACT_TYPES[type].title}
                   data={preview?.data}
                   contractDate={preview?.contractDate ?? contractDate}
+                  type={type}
                 />
               </FitToWidth>
             </div>

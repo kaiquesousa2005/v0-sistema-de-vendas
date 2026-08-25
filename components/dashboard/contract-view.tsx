@@ -193,6 +193,7 @@ export function ContractView({ contractId }: { contractId: number }) {
             title={config?.title ?? 'CONTRATO'}
             data={contract.data}
             contractDate={contract.contract_date}
+            type={contract.type}
           />
         </FitToWidth>
       </main>

@@ -124,6 +124,31 @@ export type SalePreviewInput = z.infer<typeof salePreviewSchema>
 
 const EMPTY_PARTY = { name: '', cpf: '', rg: '', phone: '', birth_date: '', address: '' }
 
+type ManualVehicleInput = z.infer<typeof manualVehicleSchema>
+
+/**
+ * Converte veículos digitados à mão para o formato do snapshot.
+ *
+ * Linhas totalmente em branco são descartadas: o formulário adiciona a linha
+ * antes de o usuário digitar, e uma linha vazia viraria um bloco fantasma no
+ * documento impresso.
+ */
+function mapManualVehicles(rows: ManualVehicleInput[] | undefined): ContractVehicle[] {
+  return (rows ?? [])
+    .filter((t) => Object.values(t).some((value) => String(value ?? '').trim() !== ''))
+    .map((t) => ({
+      vehicle_id: null,
+      brand_model: t.brand_model.toUpperCase(),
+      renavam: t.renavam,
+      plate: t.plate.toUpperCase(),
+      chassis: t.chassis.toUpperCase(),
+      color: t.color.toUpperCase(),
+      year: t.year,
+      fuel: t.fuel.toUpperCase(),
+      km: t.km,
+    }))
+}
+
 export interface BuiltSnapshot {
   snapshot: SaleContractData
   customerName: string
@@ -190,20 +215,15 @@ export async function buildSaleSnapshot(
     ]
   })
 
-  const tradeIns: ContractVehicle[] = (data.trade_ins ?? [])
-    // Descarta linhas de troca totalmente vazias
-    .filter((t) => Object.values(t).some((value) => String(value ?? '').trim() !== ''))
-    .map((t) => ({
-      vehicle_id: null,
-      brand_model: t.brand_model.toUpperCase(),
-      renavam: t.renavam,
-      plate: t.plate.toUpperCase(),
-      chassis: t.chassis.toUpperCase(),
-      color: t.color.toUpperCase(),
-      year: t.year,
-      fuel: t.fuel.toUpperCase(),
-      km: t.km,
-    }))
+  const tradeIns = mapManualVehicles(data.trade_ins)
+
+  // Veículos digitados à mão entram na mesma lista dos que vieram do estoque.
+  // Ficam depois dos selecionados para o primeiro veículo (o que nomeia o
+  // contrato) continuar sendo o escolhido no formulário quando houver os dois.
+  const allVehicles: ContractVehicle[] = [
+    ...soldVehicles,
+    ...mapManualVehicles((data as { manual_vehicles?: ManualVehicleInput[] }).manual_vehicles),
+  ]
 
   const snapshot: SaleContractData = {
     buyer: customer
@@ -216,7 +236,7 @@ export async function buildSaleSnapshot(
           address: buildCustomerAddress(customer),
         }
       : { ...EMPTY_PARTY },
-    vehicles: soldVehicles,
+    vehicles: allVehicles,
     trade_ins: tradeIns,
     negotiation: {
       summary: (data.negotiation?.summary ?? '').toUpperCase(),
@@ -236,8 +256,10 @@ export async function buildSaleSnapshot(
     },
   }
 
-  const primary = soldVehicles[0]
-  const extra = soldVehicles.length > 1 ? ` +${soldVehicles.length - 1}` : ''
+  // O rótulo da listagem sai da lista combinada: numa compra com veículo
+  // digitado não há registro no estoque, e ainda assim o card precisa de nome.
+  const primary = allVehicles[0]
+  const extra = allVehicles.length > 1 ? ` +${allVehicles.length - 1}` : ''
 
   return {
     snapshot,
