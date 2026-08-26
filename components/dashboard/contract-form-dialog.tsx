@@ -32,6 +32,7 @@ import {
   formatCpf,
   normalizeSaleData,
   toIsoDate,
+  contractRoles,
   todayIso,
   type ContractType,
   type SaleContractData,
@@ -221,6 +222,16 @@ export function ContractFormDialog({
   const [isLoading, setIsLoading] = useState(false)
   /** Confirmação exibida quando o usuário tenta sair com o formulário preenchido. */
   const [confirmExit, setConfirmExit] = useState(false)
+
+  /**
+   * Na compra os papéis se invertem: o cliente é o VENDEDOR e a loja é a
+   * COMPRADORA. Os rótulos saem daqui para o formulário não contradizer o
+   * documento impresso, que usa o mesmo `contractRoles`.
+   */
+  const roles = contractRoles(type)
+  const isPurchase = roles.storeIsBuyer
+  const customerLabel = isPurchase ? 'Vendedor' : 'Comprador'
+  const storeSignerLabel = isPurchase ? 'Nome do comprador' : 'Nome do vendedor'
 
   const [customer, setCustomer] = useState<PickerItem | null>(null)
   const [sold, setSold] = useState<SoldRow[]>([newSoldRow()])
@@ -496,7 +507,7 @@ export function ContractFormDialog({
 
   /** Payload enviado tanto para a prévia quanto para gravar. */
   const buildPayload = () => ({
-    type: 'venda' as const,
+    type,
     customer_id: customer?.id ?? null,
     vehicles: sold
       .filter((row) => row.item)
@@ -506,7 +517,9 @@ export function ContractFormDialog({
         fuel: row.fuel,
         km: row.km,
       })),
-    trade_ins: trades.map(({ key: _key, ...rest }) => rest),
+    // Na compra não há veículo de entrada. Zera aqui para o caso de o usuário
+    // ter preenchido trocas e depois trocado o tipo do contrato.
+    trade_ins: isPurchase ? [] : trades.map(({ key: _key, ...rest }) => rest),
     contract_date: contractDate,
     negotiation: {
       summary,
@@ -544,7 +557,7 @@ export function ContractFormDialog({
     e?.preventDefault()
 
     if (!customer) {
-      toast.error('Selecione o comprador')
+      toast.error(`Selecione o ${customerLabel.toLowerCase()}`)
       return
     }
     if (!sold.some((row) => row.item)) {
@@ -733,12 +746,13 @@ export function ContractFormDialog({
                 {isEditing ? `Editar ${CONTRACT_TYPES[type].label}` : CONTRACT_TYPES[type].label}
               </DialogTitle>
               <DialogDescription>
-                Os dados do comprador e dos veículos vêm do cadastro. Complete a negociação abaixo.
+                Os dados do {customerLabel.toLowerCase()} e dos veículos vêm do cadastro. Complete a
+                negociação abaixo.
               </DialogDescription>
             </DialogHeader>
 
-            {/* Comprador */}
-            <Section icon={User} title="Comprador">
+            {/* Cliente: comprador na venda, vendedor na compra */}
+            <Section icon={User} title={customerLabel}>
               <EntityPicker
                 value={customer}
                 onChange={setCustomer}
@@ -749,10 +763,10 @@ export function ContractFormDialog({
               />
             </Section>
 
-            {/* Veículos vendidos */}
+            {/* Veículos do contrato: vendidos ao cliente ou comprados dele */}
             <Section
               icon={Car}
-              title="Veículos vendidos"
+              title={isPurchase ? 'Veículos comprados' : 'Veículos vendidos'}
               action={
                 <Button
                   type="button"
@@ -825,7 +839,10 @@ export function ContractFormDialog({
               </div>
             </Section>
 
-            {/* Veículos recebidos na troca */}
+            {/* Veículos recebidos na troca — só na venda. Na compra a loja é
+                quem paga, então não existe veículo dado como entrada; deixar a
+                seção aqui permitiria digitar dados que o documento não imprime. */}
+            {!isPurchase && (
             <Section
               icon={ArrowLeftRight}
               title="Veículos recebidos na troca"
@@ -928,6 +945,7 @@ export function ContractFormDialog({
                 </div>
               )}
             </Section>
+            )}
 
             {/* Negociação */}
             <Section icon={HandCoins} title="Negociação">
@@ -1003,7 +1021,7 @@ export function ContractFormDialog({
                 <Field label="Data do contrato" value={contractDate} onChange={setContractDate} type="date" />
               </div>
               <Field
-                label="Nome do vendedor"
+                label={storeSignerLabel}
                 value={sellerName}
                 onChange={setSellerName}
                 placeholder="MAURO SERGIO RIBEIRO DE SOUSA"
