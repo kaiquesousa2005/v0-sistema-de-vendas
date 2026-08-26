@@ -27,7 +27,16 @@ import {
   shortDatePt,
   type ContractType,
 } from '@/lib/contracts'
-import { Download, FilePlus2, FileText, Loader2, Pencil, Search, Trash2 } from 'lucide-react'
+import {
+  AlertTriangle,
+  Download,
+  FilePlus2,
+  FileText,
+  Loader2,
+  Pencil,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 interface ContractRow {
@@ -189,10 +198,18 @@ export function ContractsList() {
       ) : (
         <>
           <div className="grid gap-3 md:grid-cols-2">
-            {contracts.map((contract) => (
+            {contracts.map((contract) => {
+              // Contrato salvo pela metade: o snapshot não vem na listagem, então
+              // a falta é inferida dos campos resolvidos no momento da gravação.
+              const isIncomplete =
+                !contract.customer_name || !contract.vehicle_label || !contract.total_value
+
+              return (
               <Card
                 key={contract.id}
-                className="group flex items-start justify-between gap-3 p-4 transition-colors hover:border-primary/50"
+                className={`group flex items-start justify-between gap-3 p-4 transition-colors hover:border-primary/50 ${
+                  isIncomplete ? 'border-amber-500/40' : ''
+                }`}
               >
                 <button
                   type="button"
@@ -206,22 +223,35 @@ export function ContractsList() {
                     <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
                       {CONTRACT_TYPES[contract.type]?.short ?? contract.type}
                     </Badge>
+                    {isIncomplete && (
+                      <Badge
+                        variant="outline"
+                        className="gap-1 border-amber-500/50 px-1.5 py-0 text-[10px] text-amber-600 dark:text-amber-500"
+                      >
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        Incompleto
+                      </Badge>
+                    )}
                     <span className="text-[11px] text-muted-foreground tabular-nums">
                       {shortDatePt(contract.contract_date)}
                     </span>
                   </div>
 
                   <p className="truncate text-sm font-semibold leading-tight">
-                    {contract.customer_name}
+                    {contract.customer_name || (
+                      <span className="text-muted-foreground">Cliente não informado</span>
+                    )}
                   </p>
-                  <p className="truncate text-xs text-muted-foreground">{contract.vehicle_label}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {contract.vehicle_label || 'Veículo não informado'}
+                  </p>
 
                   <p className="text-sm font-semibold tabular-nums">
                     {formatCurrency(contract.total_value)}
                   </p>
                 </button>
 
-                <div className="flex shrink-0 flex-col gap-1">
+                <div className="flex shrink-0 gap-1">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -251,7 +281,8 @@ export function ContractsList() {
                   </Button>
                 </div>
               </Card>
-            ))}
+              )
+            })}
           </div>
 
           <PaginationBar

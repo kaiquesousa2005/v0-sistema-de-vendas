@@ -12,6 +12,13 @@
 
 const A4 = { widthMm: 210, heightMm: 297 }
 
+/**
+ * Redução máxima aceita para forçar o contrato em uma única página.
+ * 0.75 equivale a ~33% de conteúdo extra absorvido; abaixo disso o texto fica
+ * pequeno demais para um documento assinado e é melhor usar duas páginas.
+ */
+const MIN_SINGLE_PAGE_SCALE = 0.75
+
 /** Espera as imagens do nó terminarem de carregar antes de rasterizar. */
 async function waitForImages(node: HTMLElement) {
   const images = Array.from(node.querySelectorAll('img'))
@@ -107,6 +114,31 @@ export async function downloadContractPdf(node: HTMLElement, fileName: string) {
   // A largura do documento corresponde à largura útil da página A4
   const pxPerMm = canvas.width / A4.widthMm
   const pageHeightPx = Math.floor(A4.heightMm * pxPerMm)
+  const contentHeightMm = canvas.height / pxPerMm
+
+  // Passou pouco de uma página: reduz o conteúdo para caber em uma só, em vez
+  // de jogar três linhas órfãs para a segunda página. Abaixo de
+  // MIN_SINGLE_PAGE_SCALE o texto ficaria pequeno demais e aí vale paginar.
+  const fitScale = A4.heightMm / contentHeightMm
+
+  if (fitScale >= MIN_SINGLE_PAGE_SCALE) {
+    const drawScale = Math.min(1, fitScale)
+    const widthMm = A4.widthMm * drawScale
+    const heightMm = contentHeightMm * drawScale
+
+    pdf.addImage(
+      canvas.toDataURL('image/jpeg', 0.95),
+      'JPEG',
+      // Centraliza na horizontal quando houve redução
+      (A4.widthMm - widthMm) / 2,
+      0,
+      widthMm,
+      heightMm,
+    )
+    pdf.save(`${fileName}.pdf`)
+    return
+  }
+
   const findBreak = makeBreakFinder(canvas)
 
   let sliceTop = 0

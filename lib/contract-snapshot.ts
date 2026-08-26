@@ -33,9 +33,17 @@ const soldVehicleSchema = z.object({
 })
 
 const baseFields = {
-  type: z.literal('venda').default('venda'),
+  type: z.enum(['venda', 'compra']).default('venda'),
   customer_id: z.coerce.number().int().positive(),
   vehicles: z.array(soldVehicleSchema),
+  /**
+   * Veículos do contrato digitados à mão, sem passar pelo estoque.
+   *
+   * Existe para a compra: o carro que a loja está comprando muitas vezes ainda
+   * não foi cadastrado. No snapshot eles são mesclados em `vehicles`, então o
+   * documento não precisa saber de onde cada veículo veio.
+   */
+  manual_vehicles: z.array(manualVehicleSchema).default([]),
   trade_ins: z.array(manualVehicleSchema).default([]),
   contract_date: z.string().trim().default(''),
 
@@ -57,23 +65,36 @@ const baseFields = {
   }),
 }
 
-/** Salvar exige comprador, veículo, negociação e vendedor. */
-export const saleSchema = z.object({
-  ...baseFields,
-  customer_id: z.coerce.number().int().positive('Selecione o comprador'),
-  vehicles: z.array(soldVehicleSchema).min(1, 'Selecione ao menos um veículo vendido'),
-  contract_date: z.string().min(10, 'Data do contrato obrigatória'),
-  negotiation: z.object({
-    summary: z.string().trim().min(1, 'Descreva a forma de negociação'),
-    total_value: z.coerce.number().nonnegative('Valor inválido'),
-    observations: z.string().trim().default(''),
-  }),
-  store: z.object({
-    address: z.string().trim().default(''),
-    city: z.string().trim().default(''),
-    seller_name: z.string().trim().min(1, 'Informe o nome do vendedor'),
-  }),
-})
+/** Salvar exige cliente, veículo, negociação e vendedor. */
+export const saleSchema = z
+  .object({
+    ...baseFields,
+    customer_id: z.coerce.number().int().positive('Selecione o cliente'),
+    contract_date: z.string().min(10, 'Data do contrato obrigatória'),
+    negotiation: z.object({
+      summary: z.string().trim().min(1, 'Descreva a forma de negociação'),
+      total_value: z.coerce.number().nonnegative('Valor inválido'),
+      observations: z.string().trim().default(''),
+    }),
+    store: z.object({
+      address: z.string().trim().default(''),
+      city: z.string().trim().default(''),
+      seller_name: z.string().trim().min(1, 'Informe o nome do vendedor'),
+    }),
+  })
+  // Checagem cruzada em vez de `vehicles.min(1)`: na compra o veículo pode vir
+  // do estoque OU ser digitado, e exigir a lista do estoque bloquearia o
+  // preenchimento manual.
+  .superRefine((value, ctx) => {
+    const hasVehicle = value.vehicles.length > 0 || value.manual_vehicles.length > 0
+    if (!hasVehicle) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['vehicles'],
+        message: 'Informe ao menos um veículo',
+      })
+    }
+  })
 
 /**
  * A prévia roda com o formulário pela metade, então tudo é opcional:
@@ -88,10 +109,45 @@ export const salePreviewSchema = z.object({
   store: baseFields.store.partial().default({}),
 })
 
+/**
+ * Rascunho gravável: as mesmas regras frouxas da prévia, mas o resultado vai
+ * para o banco. É o schema usado quando o usuário fecha o modal no meio do
+ * preenchimento e escolhe salvar o que já digitou.
+ *
+ * Nenhum campo é obrigatório aqui de propósito — a validação "de verdade"
+ * continua no `saleSchema`, aplicada quando o contrato é finalizado.
+ */
+export const saleDraftSchema = salePreviewSchema
+
 export type SaleInput = z.infer<typeof saleSchema>
 export type SalePreviewInput = z.infer<typeof salePreviewSchema>
 
 const EMPTY_PARTY = { name: '', cpf: '', rg: '', phone: '', birth_date: '', address: '' }
+
+type ManualVehicleInput = z.infer<typeof manualVehicleSchema>
+
+/**
+ * Converte veículos digitados à mão para o formato do snapshot.
+ *
+ * Linhas totalmente em branco são descartadas: o formulário adiciona a linha
+ * antes de o usuário digitar, e uma linha vazia viraria um bloco fantasma no
+ * documento impresso.
+ */
+function mapManualVehicles(rows: ManualVehicleInput[] | undefined): ContractVehicle[] {
+  return (rows ?? [])
+    .filter((t) => Object.values(t).some((value) => String(value ?? '').trim() !== ''))
+    .map((t) => ({
+      vehicle_id: null,
+      brand_model: t.brand_model.toUpperCase(),
+      renavam: t.renavam,
+      plate: t.plate.toUpperCase(),
+      chassis: t.chassis.toUpperCase(),
+      color: t.color.toUpperCase(),
+      year: t.year,
+      fuel: t.fuel.toUpperCase(),
+      km: t.km,
+    }))
+}
 
 export interface BuiltSnapshot {
   snapshot: SaleContractData
@@ -159,20 +215,15 @@ export async function buildSaleSnapshot(
     ]
   })
 
-  const tradeIns: ContractVehicle[] = (data.trade_ins ?? [])
-    // Descarta linhas de troca totalmente vazias
-    .filter((t) => Object.values(t).some((value) => String(value ?? '').trim() !== ''))
-    .map((t) => ({
-      vehicle_id: null,
-      brand_model: t.brand_model.toUpperCase(),
-      renavam: t.renavam,
-      plate: t.plate.toUpperCase(),
-      chassis: t.chassis.toUpperCase(),
-      color: t.color.toUpperCase(),
-      year: t.year,
-      fuel: t.fuel.toUpperCase(),
-      km: t.km,
-    }))
+  const tradeIns = mapManualVehicles(data.trade_ins)
+
+  // Veículos digitados à mão entram na mesma lista dos que vieram do estoque.
+  // Ficam depois dos selecionados para o primeiro veículo (o que nomeia o
+  // contrato) continuar sendo o escolhido no formulário quando houver os dois.
+  const allVehicles: ContractVehicle[] = [
+    ...soldVehicles,
+    ...mapManualVehicles((data as { manual_vehicles?: ManualVehicleInput[] }).manual_vehicles),
+  ]
 
   const snapshot: SaleContractData = {
     buyer: customer
@@ -185,7 +236,7 @@ export async function buildSaleSnapshot(
           address: buildCustomerAddress(customer),
         }
       : { ...EMPTY_PARTY },
-    vehicles: soldVehicles,
+    vehicles: allVehicles,
     trade_ins: tradeIns,
     negotiation: {
       summary: (data.negotiation?.summary ?? '').toUpperCase(),
@@ -205,8 +256,10 @@ export async function buildSaleSnapshot(
     },
   }
 
-  const primary = soldVehicles[0]
-  const extra = soldVehicles.length > 1 ? ` +${soldVehicles.length - 1}` : ''
+  // O rótulo da listagem sai da lista combinada: numa compra com veículo
+  // digitado não há registro no estoque, e ainda assim o card precisa de nome.
+  const primary = allVehicles[0]
+  const extra = allVehicles.length > 1 ? ` +${allVehicles.length - 1}` : ''
 
   return {
     snapshot,
@@ -221,7 +274,12 @@ export async function buildSaleSnapshot(
   }
 }
 
-/** Persiste os dados da loja para pré-preencher os próximos contratos. */
+/**
+ * Persiste os dados da loja para pré-preencher os próximos contratos.
+ *
+ * Campo vazio nunca sobrescreve o valor já guardado: salvar um rascunho no meio
+ * do preenchimento não pode apagar o endereço/vendedor lembrados.
+ */
 export async function rememberStoreDefaults(
   sql: Sql,
   storeId: number,
@@ -229,9 +287,9 @@ export async function rememberStoreDefaults(
 ) {
   await sql`
     UPDATE stores
-    SET address = ${store.address || null},
-        city = ${store.city || null},
-        seller_name = ${store.seller_name || null}
+    SET address = COALESCE(NULLIF(${store.address}, ''), address),
+        city = COALESCE(NULLIF(${store.city}, ''), city),
+        seller_name = COALESCE(NULLIF(${store.seller_name}, ''), seller_name)
     WHERE id = ${storeId}
   `
 }

@@ -7,6 +7,14 @@ export const CONTRACT_TYPES = {
     description: 'Venda de veículo ao cliente, com negociação, garantia e entrega.',
     available: true,
   },
+  compra: {
+    label: 'Contrato de Compra',
+    short: 'Compra',
+    prefix: 'CMP',
+    title: 'CONTRATO DE COMPRA DE VEICULOS',
+    description: 'Compra de veículo de um cliente, com pagamento e recebimento.',
+    available: true,
+  },
   devolucao: {
     label: 'Contrato de Devolução',
     short: 'Devolução',
@@ -49,6 +57,28 @@ export function isContractType(value: string): value is ContractType {
   return Object.prototype.hasOwnProperty.call(CONTRACT_TYPES, value)
 }
 
+/** Tipos que já podem ser criados/gravados. */
+export const AVAILABLE_CONTRACT_TYPES = CONTRACT_TYPE_KEYS.filter((k) => CONTRACT_TYPES[k].available)
+
+/**
+ * Papéis das partes conforme o tipo de contrato.
+ *
+ * Na venda a loja é a VENDEDORA e o cliente é o COMPRADOR. Na compra os papéis
+ * se invertem: a loja compra o veículo do cliente, que passa a ser o VENDEDOR.
+ * O snapshot guarda o cliente sempre na mesma chave (`buyer`), então é este
+ * mapa que decide os rótulos do documento e do formulário.
+ */
+export function contractRoles(type: ContractType) {
+  const storeIsBuyer = type === 'compra'
+  return {
+    /** Papel do cliente no contrato. */
+    customer: storeIsBuyer ? 'VENDEDOR' : 'COMPRADOR',
+    /** Papel da loja no contrato. */
+    store: storeIsBuyer ? 'COMPRADOR' : 'VENDEDOR',
+    storeIsBuyer,
+  }
+}
+
 /* ---------- Snapshot armazenado em contracts.data ---------- */
 
 export interface ContractParty {
@@ -89,8 +119,15 @@ export const SALE_WARRANTY = { days: 90, daysText: 'NOVENTA', km: 5000 } as cons
 
 /** Formato canônico usado pelo documento e pelo formulário. */
 export interface SaleContractData {
+  /**
+   * A contraparte da loja — sempre o cliente cadastrado.
+   *
+   * A chave se chama `buyer` porque nasceu no contrato de venda e já existe em
+   * snapshots gravados; no contrato de compra ela guarda o VENDEDOR. Use
+   * `contractRoles(type)` para saber o rótulo correto em cada caso.
+   */
   buyer: ContractParty
-  /** Veículos vendidos ao comprador (1 ou mais). */
+  /** Veículos objeto do contrato: vendidos ao cliente ou comprados dele. */
   vehicles: ContractVehicle[]
   /** Veículos recebidos como parte do pagamento (troca). */
   trade_ins: ContractVehicle[]
@@ -228,6 +265,92 @@ export function shortDatePt(iso: string | Date | null | undefined): string {
   const p = dateParts(iso)
   if (!p) return ''
   return `${String(p.d).padStart(2, '0')}/${String(p.m).padStart(2, '0')}/${p.y}`
+}
+
+/** Data de hoje em "AAAA-MM-DD", no fuso local. */
+export function todayIso(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+/**
+ * Campos essenciais ausentes num snapshot de contrato. Lista vazia = completo.
+ *
+ * Contratos podem ser gravados incompletos (quando o usuário sai do formulário
+ * no meio e escolhe salvar), então a "incompletude" é derivada do próprio
+ * snapshot em vez de guardada numa coluna: se depois ele preencher o que
+ * faltava pela edição, o aviso desaparece sozinho, sem migração nem backfill.
+ */
+export function missingContractFields(data: unknown): string[] {
+  const d = normalizeSaleData(data)
+  const missing: string[] = []
+
+  if (!d.buyer.name) missing.push('Comprador')
+  if (d.vehicles.length === 0) missing.push('Veículo')
+  if (!d.negotiation.summary) missing.push('Forma de negociação')
+  if (!d.negotiation.total_value) missing.push('Valor')
+  if (!d.store.seller_name) missing.push('Vendedor')
+
+  return missing
+}
+
+/** Nome do mês em maiúsculas, ex.: 8 -> "AGOSTO". */
+export function monthNamePt(month: number): string {
+  return MONTHS_PT[month - 1] ?? ''
+}
+
+export interface MonthGroup<T> {
+  /** "2026-08" — inclui o ano para não misturar agostos de anos diferentes. */
+  key: string
+  /** "AGOSTO 2026" */
+  label: string
+  year: number
+  month: number
+  count: number
+  totalValue: number
+  items: T[]
+}
+
+/**
+ * Agrupa contratos por ano+mês de `contract_date`.
+ *
+ * Preserva a ordem de entrada, então uma lista que já vem do banco ordenada por
+ * data decrescente produz grupos do mês mais recente para o mais antigo.
+ */
+export function groupContractsByMonth<
+  T extends { contract_date: string | Date; total_value: number },
+>(rows: T[]): MonthGroup<T>[] {
+  const groups = new Map<string, MonthGroup<T>>()
+
+  for (const row of rows) {
+    const p = dateParts(row.contract_date)
+    if (!p) continue
+
+    const key = `${p.y}-${String(p.m).padStart(2, '0')}`
+    let group = groups.get(key)
+
+    if (!group) {
+      group = {
+        key,
+        label: `${monthNamePt(p.m)} ${p.y}`,
+        year: p.y,
+        month: p.m,
+        count: 0,
+        totalValue: 0,
+        items: [],
+      }
+      groups.set(key, group)
+    }
+
+    group.items.push(row)
+    group.count += 1
+    group.totalValue += Number(row.total_value) || 0
+  }
+
+  return [...groups.values()]
 }
 
 export function formatCurrency(value: number | string | null | undefined): string {

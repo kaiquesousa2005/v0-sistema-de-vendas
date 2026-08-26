@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { jwtVerify } from 'jose'
 import { z } from 'zod'
-import { CONTRACT_TYPES } from '@/lib/contracts'
-import { buildSaleSnapshot, rememberStoreDefaults, saleSchema } from '@/lib/contract-snapshot'
+import { CONTRACT_TYPES, todayIso } from '@/lib/contracts'
+import {
+  buildSaleSnapshot,
+  rememberStoreDefaults,
+  saleDraftSchema,
+  saleSchema,
+} from '@/lib/contract-snapshot'
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'autogest-secret-key')
 
@@ -18,6 +23,19 @@ async function getStoreId(request: NextRequest): Promise<number | null> {
   }
 }
 
+/**
+ * Lista de contratos para a página, agrupada por mês no cliente.
+ *
+ * Não é paginada de propósito: a listagem agrupa por mês e uma página fixa
+ * cortaria um mês no meio, deixando o total do cabeçalho errado. O escopo é
+ * limitado por ano (`year`), o que mantém o volume por requisição pequeno
+ * mesmo com centenas de contratos por ano.
+ *
+ * Com busca preenchida o ano é ignorado e a procura passa a ser em todo o
+ * histórico — quem procura por um cliente raramente lembra o ano do contrato.
+ */
+const MAX_ROWS = 2000
+
 export async function GET(request: NextRequest) {
   const storeId = await getStoreId(request)
   if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -26,58 +44,40 @@ export async function GET(request: NextRequest) {
     const sql = neon(process.env.DATABASE_URL!)
     const sp = request.nextUrl.searchParams
 
-    const page = Math.max(1, Number.parseInt(sp.get('page') ?? '1') || 1)
-    const limit = Math.min(50, Math.max(1, Number.parseInt(sp.get('limit') ?? '12') || 12))
-    const offset = (page - 1) * limit
-
     const search = (sp.get('search') ?? '').trim()
     const like = `%${search}%`
 
     const typeParam = (sp.get('type') ?? '').trim()
     const type = Object.prototype.hasOwnProperty.call(CONTRACT_TYPES, typeParam) ? typeParam : ''
 
-    const [countRows, contracts] = await Promise.all([
-      sql`
-        SELECT COUNT(*)::int AS total
-        FROM contracts
-        WHERE store_id = ${storeId}
-          AND (${type} = '' OR type = ${type})
-          AND (
-            ${search} = ''
-            OR customer_name ILIKE ${like}
-            OR vehicle_label ILIKE ${like}
-            OR contract_number ILIKE ${like}
-          )
-      `,
-      sql`
-        SELECT
-          id, type, contract_number, customer_id, vehicle_id,
-          customer_name, vehicle_label, total_value, contract_date, created_at
-        FROM contracts
-        WHERE store_id = ${storeId}
-          AND (${type} = '' OR type = ${type})
-          AND (
-            ${search} = ''
-            OR customer_name ILIKE ${like}
-            OR vehicle_label ILIKE ${like}
-            OR contract_number ILIKE ${like}
-          )
-        ORDER BY created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `,
-    ])
+    // 0 desliga o filtro de ano (usado quando há busca ativa)
+    const parsedYear = Number.parseInt(sp.get('year') ?? '', 10)
+    const year = search || !Number.isFinite(parsedYear) ? 0 : parsedYear
 
-    const total = Number(countRows[0]?.total ?? 0)
+    const contracts = await sql`
+      SELECT
+        id, type, contract_number, customer_id, vehicle_id,
+        customer_name, vehicle_label, total_value, contract_date, created_at
+      FROM contracts
+      WHERE store_id = ${storeId}
+        AND (${type} = '' OR type = ${type})
+        AND (${year} = 0 OR EXTRACT(YEAR FROM contract_date) = ${year})
+        AND (
+          ${search} = ''
+          OR customer_name ILIKE ${like}
+          OR vehicle_label ILIKE ${like}
+          OR contract_number ILIKE ${like}
+        )
+      ORDER BY contract_date DESC, id DESC
+      LIMIT ${MAX_ROWS}
+    `
 
     return NextResponse.json({
       contracts: contracts.map((c) => ({
         ...c,
         total_value: Number(c.total_value) || 0,
       })),
-      total,
-      page,
-      limit,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
+      total: contracts.length,
     })
   } catch (error) {
     console.error('[v0] GET contracts error:', error)
@@ -100,7 +100,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const data = saleSchema.parse(body)
+    // Rascunho: o usuário saiu do formulário no meio e optou por guardar o que
+    // já preencheu. Aceita campos em branco; a validação estrita fica para
+    // quando ele finalizar o contrato.
+    const isDraft = body?.draft === true
+    const data = isDraft ? saleDraftSchema.parse(body) : saleSchema.parse(body)
     const sql = neon(process.env.DATABASE_URL!)
 
     const { snapshot, customerName, vehicleLabel, vehicleIds } = await buildSaleSnapshot(
@@ -109,10 +113,10 @@ export async function POST(request: NextRequest) {
       data,
     )
 
-    if (!customerName) {
+    if (!isDraft && !customerName) {
       return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
     }
-    if (vehicleIds.length === 0) {
+    if (!isDraft && vehicleIds.length === 0) {
       return NextResponse.json({ error: 'Veículo não encontrado' }, { status: 404 })
     }
 
@@ -140,9 +144,9 @@ export async function POST(request: NextRequest) {
             store_id, type, contract_number, customer_id, vehicle_id,
             customer_name, vehicle_label, total_value, contract_date, data
           ) VALUES (
-            ${storeId}, 'venda', ${contractNumber}, ${data.customer_id}, ${vehicleIds[0]},
+            ${storeId}, 'venda', ${contractNumber}, ${data.customer_id || null}, ${vehicleIds[0] ?? null},
             ${customerName}, ${vehicleLabel}, ${snapshot.negotiation.total_value},
-            ${data.contract_date}, ${JSON.stringify(snapshot)}::jsonb
+            ${data.contract_date || todayIso()}, ${JSON.stringify(snapshot)}::jsonb
           )
           RETURNING id, type, contract_number, customer_name, vehicle_label, total_value, contract_date
         `

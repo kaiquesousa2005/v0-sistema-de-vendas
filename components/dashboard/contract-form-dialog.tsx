@@ -12,6 +12,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { EntityPicker, type PickerItem } from '@/components/dashboard/entity-picker'
 import { ContractDocument } from '@/components/dashboard/contract-document'
 import { FitToWidth } from '@/components/dashboard/fit-to-width'
@@ -22,6 +32,8 @@ import {
   formatCpf,
   normalizeSaleData,
   toIsoDate,
+  contractRoles,
+  todayIso,
   type ContractType,
   type SaleContractData,
 } from '@/lib/contracts'
@@ -38,6 +50,7 @@ import {
   Plus,
   Repeat,
   ShieldCheck,
+  ShoppingCart,
   Trash2,
   Undo2,
   User,
@@ -46,6 +59,7 @@ import { toast } from 'sonner'
 
 const TYPE_ICONS: Record<ContractType, typeof FileText> = {
   venda: FileSignature,
+  compra: ShoppingCart,
   devolucao: Undo2,
   repasse: Repeat,
   consignacao: ArrowLeftRight,
@@ -186,11 +200,6 @@ const newTradeRow = (): TradeRow => ({
   km: '',
 })
 
-function todayIso() {
-  // en-CA formata como YYYY-MM-DD respeitando o fuso local
-  return new Date().toLocaleDateString('en-CA')
-}
-
 interface ContractFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -211,6 +220,18 @@ export function ContractFormDialog({
   const [type, setType] = useState<ContractType>('venda')
   const [isSaving, setIsSaving] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  /** Confirmação exibida quando o usuário tenta sair com o formulário preenchido. */
+  const [confirmExit, setConfirmExit] = useState(false)
+
+  /**
+   * Na compra os papéis se invertem: o cliente é o VENDEDOR e a loja é a
+   * COMPRADORA. Os rótulos saem daqui para o formulário não contradizer o
+   * documento impresso, que usa o mesmo `contractRoles`.
+   */
+  const roles = contractRoles(type)
+  const isPurchase = roles.storeIsBuyer
+  const customerLabel = isPurchase ? 'Vendedor' : 'Comprador'
+  const storeSignerLabel = isPurchase ? 'Nome do comprador' : 'Nome do vendedor'
 
   const [customer, setCustomer] = useState<PickerItem | null>(null)
   const [sold, setSold] = useState<SoldRow[]>([newSoldRow()])
@@ -409,14 +430,84 @@ export function ContractFormDialog({
     setStep('form')
   }
 
+  const closeNow = useCallback(() => {
+    setConfirmExit(false)
+    onOpenChange(false)
+    resetForm()
+  }, [onOpenChange, resetForm])
+
+  /**
+   * Há algo digitado que seria perdido ao fechar? Endereço/cidade/vendedor não
+   * entram na conta porque vêm pré-carregados do perfil da loja, não do usuário.
+   */
+  const hasContent =
+    customer != null ||
+    sold.some((row) => row.item) ||
+    trades.length > 0 ||
+    summary.trim() !== '' ||
+    totalValue.trim() !== '' ||
+    observations.trim() !== ''
+
+  /**
+   * Intercepta todas as formas de fechar (X, clique fora e Esc) — o Radix
+   * encaminha as três para cá. Com conteúdo digitado, pede confirmação em vez
+   * de descartar na hora.
+   *
+   * Só vale para criação: na edição o contrato já está salvo, então fechar não
+   * perde o registro, apenas os ajustes não confirmados.
+   */
   const handleClose = (nextOpen: boolean) => {
-    onOpenChange(nextOpen)
-    if (!nextOpen) resetForm()
+    if (nextOpen) {
+      onOpenChange(true)
+      return
+    }
+    if (!isEditing && hasContent) {
+      setConfirmExit(true)
+      return
+    }
+    closeNow()
+  }
+
+  /**
+   * Grava o que já foi preenchido, sem passar pela validação de contrato
+   * finalizado. Em caso de erro o modal fica aberto de propósito: fechar aqui
+   * jogaria fora justamente o que o usuário pediu para preservar.
+   */
+  const handleSaveDraft = async () => {
+    setIsSaving(true)
+    try {
+      const response = await fetch(isEditing ? `/api/contracts/${contractId}` : '/api/contracts', {
+        method: isEditing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...buildPayload(), draft: true }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        toast.error(data.error || 'Erro ao salvar contrato')
+        setConfirmExit(false)
+        return
+      }
+
+      toast.success(
+        data.contract_number
+          ? `Contrato ${data.contract_number} salvo incompleto`
+          : 'Contrato salvo incompleto',
+      )
+      closeNow()
+      onSaved(Number(data.id))
+    } catch (error) {
+      console.error('[v0] save draft error:', error)
+      toast.error('Erro de conexão ao salvar contrato')
+      setConfirmExit(false)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   /** Payload enviado tanto para a prévia quanto para gravar. */
   const buildPayload = () => ({
-    type: 'venda' as const,
+    type,
     customer_id: customer?.id ?? null,
     vehicles: sold
       .filter((row) => row.item)
@@ -426,7 +517,9 @@ export function ContractFormDialog({
         fuel: row.fuel,
         km: row.km,
       })),
-    trade_ins: trades.map(({ key: _key, ...rest }) => rest),
+    // Na compra não há veículo de entrada. Zera aqui para o caso de o usuário
+    // ter preenchido trocas e depois trocado o tipo do contrato.
+    trade_ins: isPurchase ? [] : trades.map(({ key: _key, ...rest }) => rest),
     contract_date: contractDate,
     negotiation: {
       summary,
@@ -464,7 +557,7 @@ export function ContractFormDialog({
     e?.preventDefault()
 
     if (!customer) {
-      toast.error('Selecione o comprador')
+      toast.error(`Selecione o ${customerLabel.toLowerCase()}`)
       return
     }
     if (!sold.some((row) => row.item)) {
@@ -508,7 +601,8 @@ export function ContractFormDialog({
   const showTypeStep = step === 'type' && !isEditing
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
         showCloseButton={step !== 'preview'}
         className={
@@ -517,7 +611,10 @@ export function ContractFormDialog({
               // arredondamento e sem translate de centralização. O scroll fica
               // na área do documento, não no diálogo.
               'flex h-screen max-h-screen w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 !rounded-none border-0 p-0 top-0 left-0 sm:max-w-none'
-            : 'max-h-[90vh] max-w-3xl overflow-y-auto'
+            : // `sm:max-w-*` é obrigatório aqui: o DialogContent já traz
+              // `sm:max-w-lg` e o tailwind-merge trata prefixo de variante como
+              // chave própria, então só `max-w-6xl` não sobrescreveria nada.
+              'max-h-[92vh] w-[96vw] max-w-6xl overflow-y-auto sm:max-w-6xl'
         }
       >
         {isLoading ? (
@@ -543,7 +640,9 @@ export function ContractFormDialog({
             <div className="grid gap-3 sm:grid-cols-2">
               {CONTRACT_TYPE_KEYS.map((key) => {
                 const cfg = CONTRACT_TYPES[key]
-                const Icon = TYPE_ICONS[key]
+                // Fallback: um tipo novo sem ícone mapeado deixaria `Icon`
+                // undefined e derrubaria a tela inteira do seletor.
+                const Icon = TYPE_ICONS[key] ?? FileText
                 return (
                   <button
                     key={key}
@@ -623,6 +722,7 @@ export function ContractFormDialog({
                   title={CONTRACT_TYPES[type].title}
                   data={preview?.data}
                   contractDate={preview?.contractDate ?? contractDate}
+                  type={type}
                 />
               </FitToWidth>
             </div>
@@ -646,12 +746,13 @@ export function ContractFormDialog({
                 {isEditing ? `Editar ${CONTRACT_TYPES[type].label}` : CONTRACT_TYPES[type].label}
               </DialogTitle>
               <DialogDescription>
-                Os dados do comprador e dos veículos vêm do cadastro. Complete a negociação abaixo.
+                Os dados do {customerLabel.toLowerCase()} e dos veículos vêm do cadastro. Complete a
+                negociação abaixo.
               </DialogDescription>
             </DialogHeader>
 
-            {/* Comprador */}
-            <Section icon={User} title="Comprador">
+            {/* Cliente: comprador na venda, vendedor na compra */}
+            <Section icon={User} title={customerLabel}>
               <EntityPicker
                 value={customer}
                 onChange={setCustomer}
@@ -662,10 +763,10 @@ export function ContractFormDialog({
               />
             </Section>
 
-            {/* Veículos vendidos */}
+            {/* Veículos do contrato: vendidos ao cliente ou comprados dele */}
             <Section
               icon={Car}
-              title="Veículos vendidos"
+              title={isPurchase ? 'Veículos comprados' : 'Veículos vendidos'}
               action={
                 <Button
                   type="button"
@@ -738,7 +839,10 @@ export function ContractFormDialog({
               </div>
             </Section>
 
-            {/* Veículos recebidos na troca */}
+            {/* Veículos recebidos na troca — só na venda. Na compra a loja é
+                quem paga, então não existe veículo dado como entrada; deixar a
+                seção aqui permitiria digitar dados que o documento não imprime. */}
+            {!isPurchase && (
             <Section
               icon={ArrowLeftRight}
               title="Veículos recebidos na troca"
@@ -788,50 +892,50 @@ export function ContractFormDialog({
                           label="Marca/Modelo"
                           value={row.brand_model}
                           onChange={(v) => updateTrade(row.key, { brand_model: v })}
-                          placeholder="VW SAVEIRO CD 1.6"
+                          placeholder="MARCA/MODELO DO VEÍCULO RECEBIDO"
                           className="sm:col-span-2"
                         />
                         <Field
                           label="Placa"
                           value={row.plate}
                           onChange={(v) => updateTrade(row.key, { plate: v })}
-                          placeholder="PMW2J33"
+                          placeholder="PLACA DO VEÍCULO RECEBIDO"
                         />
                         <Field
                           label="Renavam"
                           value={row.renavam}
                           onChange={(v) => updateTrade(row.key, { renavam: v })}
-                          placeholder="01151711460"
+                          placeholder="RENAVAN DO VEÍCULO RECEBIDO"
                         />
                         <Field
                           label="Chassi"
                           value={row.chassis}
                           onChange={(v) => updateTrade(row.key, { chassis: v })}
-                          placeholder="9BWJB45U4JP091533"
+                          placeholder="CHASSI DO VEÍCULO RECEBIDO"
                         />
                         <Field
                           label="Cor"
                           value={row.color}
                           onChange={(v) => updateTrade(row.key, { color: v })}
-                          placeholder="BRANCA"
+                          placeholder="COR"
                         />
                         <Field
                           label="Ano"
                           value={row.year}
                           onChange={(v) => updateTrade(row.key, { year: v })}
-                          placeholder="2018/2018"
+                          placeholder="FABRICAÇÃO/MODELO"
                         />
                         <Field
                           label="Combustível"
                           value={row.fuel}
                           onChange={(v) => updateTrade(row.key, { fuel: v })}
-                          placeholder="FLEX"
+                          placeholder="FLEX/DIESEL/GASOLINA"
                         />
                         <Field
                           label="KM"
                           value={row.km}
                           onChange={(v) => updateTrade(row.key, { km: v })}
-                          placeholder="98000"
+                          placeholder="00000"
                           type="number"
                           className="sm:col-span-2"
                         />
@@ -841,6 +945,7 @@ export function ContractFormDialog({
                 </div>
               )}
             </Section>
+            )}
 
             {/* Negociação */}
             <Section icon={HandCoins} title="Negociação">
@@ -849,14 +954,14 @@ export function ContractFormDialog({
                   label="Forma de negociação"
                   value={summary}
                   onChange={setSummary}
-                  placeholder="AVISTA + CARRO + BOLETO"
+                  placeholder="NEGOCIAÇÃO (AVISTA + FINANCIAMENTO)"
                   required
                 />
                 <Field
                   label="Valor total (R$)"
                   value={totalValue}
                   onChange={setTotalValue}
-                  placeholder="61800.00"
+                  placeholder="VALOR DA VENDA"
                   type="number"
                   required
                 />
@@ -866,7 +971,7 @@ export function ContractFormDialog({
                 label="Observações da negociação"
                 value={observations}
                 onChange={setObservations}
-                placeholder="RECEBENDO 1.800,00 NO PIX DA LOJA + RECEBENDO O SAVEIRO 35.000,00 + 25.000,00 NO BOLETO BANCARIO EM 24X 1.500,00..."
+                placeholder="**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO..."
                 hint="Aparece no contrato como OBS, logo abaixo do valor. Detalhe entradas, parcelas, descontos e prazos."
                 rows={5}
               />
@@ -916,7 +1021,7 @@ export function ContractFormDialog({
                 <Field label="Data do contrato" value={contractDate} onChange={setContractDate} type="date" />
               </div>
               <Field
-                label="Nome do vendedor"
+                label={storeSignerLabel}
                 value={sellerName}
                 onChange={setSellerName}
                 placeholder="MAURO SERGIO RIBEIRO DE SOUSA"
@@ -954,7 +1059,46 @@ export function ContractFormDialog({
             </div>
           </form>
         )}
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmação ao sair com o formulário preenchido. Fica fora do Dialog
+          para os dois não disputarem o mesmo focus trap do Radix. */}
+      <AlertDialog open={confirmExit} onOpenChange={setConfirmExit}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sair sem finalizar o contrato?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O contrato ainda não foi finalizado. Você pode salvar o que já preencheu e continuar
+              depois pela edição, ou descartar tudo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel disabled={isSaving}>Continuar preenchendo</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeNow}
+              disabled={isSaving}
+              className="sm:mt-0"
+            >
+              Descartar
+            </Button>
+            <AlertDialogAction
+              onClick={(event) => {
+                // Sem isso o Radix fecharia o alerta antes de a gravação terminar
+                event.preventDefault()
+                void handleSaveDraft()
+              }}
+              disabled={isSaving}
+              className="gap-2"
+            >
+              {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Sim, salvar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
