@@ -27,9 +27,9 @@ export const CONTRACT_TYPES = {
     label: 'Contrato de Repasse',
     short: 'Repasse',
     prefix: 'REP',
-    title: 'CONTRATO DE REPASSE DE VEICULO',
-    description: 'Repasse do veículo para outra loja ou revendedor.',
-    available: false,
+    title: 'CONTRATO DE REPASSE DE VEICULOS',
+    description: 'Venda de veículo abaixo do mercado, sem nenhuma garantia da loja.',
+    available: true,
   },
   consignacao: {
     label: 'Contrato de Consignação',
@@ -61,12 +61,15 @@ export function isContractType(value: string): value is ContractType {
 export const AVAILABLE_CONTRACT_TYPES = CONTRACT_TYPE_KEYS.filter((k) => CONTRACT_TYPES[k].available)
 
 /**
- * Papéis das partes conforme o tipo de contrato.
+ * Papéis das partes e regras de conteúdo conforme o tipo de contrato.
  *
  * Na venda a loja é a VENDEDORA e o cliente é o COMPRADOR. Na compra os papéis
  * se invertem: a loja compra o veículo do cliente, que passa a ser o VENDEDOR.
  * O snapshot guarda o cliente sempre na mesma chave (`buyer`), então é este
  * mapa que decide os rótulos do documento e do formulário.
+ *
+ * Fonte única também das diferenças de conteúdo (garantia, troca, RG), para o
+ * formulário não prometer algo que o documento impresso não traz.
  */
 export function contractRoles(type: ContractType) {
   const storeIsBuyer = type === 'compra'
@@ -76,6 +79,16 @@ export function contractRoles(type: ContractType) {
     /** Papel da loja no contrato. */
     store: storeIsBuyer ? 'COMPRADOR' : 'VENDEDOR',
     storeIsBuyer,
+    /**
+     * Só a venda tem garantia de motor e câmbio. No repasse o carro sai abaixo
+     * do valor de mercado justamente por não ter garantia, e na compra quem
+     * vende é o cliente, que não assume garantia nenhuma.
+     */
+    hasWarranty: type === 'venda',
+    /** Veículo dado como entrada só existe quando a loja é a vendedora. */
+    hasTradeIns: !storeIsBuyer,
+    /** Compra e repasse imprimem o RG do cliente, como nos recibos em papel. */
+    showsRg: type === 'compra' || type === 'repasse',
   }
 }
 
@@ -284,15 +297,18 @@ export function todayIso(): string {
  * snapshot em vez de guardada numa coluna: se depois ele preencher o que
  * faltava pela edição, o aviso desaparece sozinho, sem migração nem backfill.
  */
-export function missingContractFields(data: unknown): string[] {
+export function missingContractFields(data: unknown, type: ContractType = 'venda'): string[] {
   const d = normalizeSaleData(data)
+  const roles = contractRoles(type)
   const missing: string[] = []
 
-  if (!d.buyer.name) missing.push('Comprador')
+  // Rótulos seguem o papel de cada parte: numa compra o que falta é o
+  // "Vendedor" (o cliente) e quem assina pela loja é o "Comprador".
+  if (!d.buyer.name) missing.push(roles.storeIsBuyer ? 'Vendedor' : 'Comprador')
   if (d.vehicles.length === 0) missing.push('Veículo')
   if (!d.negotiation.summary) missing.push('Forma de negociação')
   if (!d.negotiation.total_value) missing.push('Valor')
-  if (!d.store.seller_name) missing.push('Vendedor')
+  if (!d.store.seller_name) missing.push(roles.storeIsBuyer ? 'Comprador' : 'Vendedor')
 
   return missing
 }

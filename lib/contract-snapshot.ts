@@ -33,7 +33,7 @@ const soldVehicleSchema = z.object({
 })
 
 const baseFields = {
-  type: z.enum(['venda', 'compra']).default('venda'),
+  type: z.enum(['venda', 'compra', 'repasse']).default('venda'),
   customer_id: z.coerce.number().int().positive(),
   vehicles: z.array(soldVehicleSchema),
   /**

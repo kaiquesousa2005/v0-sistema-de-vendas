@@ -219,6 +219,38 @@ function purchaseClauses(): React.ReactNode[] {
   ]
 }
 
+/**
+ * Cláusulas do contrato de repasse (loja vende sem garantia).
+ *
+ * Estrutura da venda, com três diferenças que vêm do recibo em papel: o
+ * comprador não pode reclamar depois porque o carro saiu abaixo do valor de
+ * mercado, as custas de transferência e regularização ficam com ele, e a última
+ * cláusula declara expressamente a ausência de garantia da loja.
+ */
+function transferClauses(): React.ReactNode[] {
+  return [
+    <>
+      A PARTIR DESTA DATA, TODO E QUALQUER DANO QUE DOS REFERIDOS VEÍCULO VENHA CAUSAR A TERCEIROS,
+      FICARÁ DE RESPONSABILIDADE CIVIL E CRIMINAL DO COMPRADOR E TAMBÉM A PONTUAÇÃO JUNTO AO DETRAN.
+    </>,
+    <>
+      É DE RESPONSABILIDADE DO VENDEDOR A QUITAÇÃO DE TODAS AS MULTAS DE TRÂNSITO, IPVA,
+      LICENCIAMENTO E RESTRIÇÃO DE ALIENAÇÃO QUE O REFERIDO VEÍCULO VENHA TER NO DETRAN OU EM OUTROS
+      ÓRGÃOS ATÉ A DATA DA VENDA.
+    </>,
+    <>
+      O COMPRADOR RECEBE O VEÍCULO NO ESTADO QUE SE ENCONTRA EXAMINADO PELO O SEU MECÂNICO DE SUA
+      CONFIANÇA NESTA DATA. NÃO ACEITAMOS RECLAMAÇÕES POSTERIORES VEICULO USADO E REPASSADO ABAIXO DO
+      VALOR DO MERCADO.
+    </>,
+    <>
+      A TRANSFERÊNCIA DO VEÍCULO SERÁ ENTREGUE AO COMPRADOR MEDIANTE QUITAÇÃO TOTAL DO VEÍCULO. E O
+      CLIENTE ARCA COM AS CUSTA DE TRANSFERÊNCIA E REGULARIZAÇÃO PARA O SEU NOME OU PESSOA INDICADA.
+    </>,
+    <>CARRO DE REPASSE SEM NENHUMA GARANTIA DA LOJA.</>,
+  ]
+}
+
 /** Letras das cláusulas: A), B), C)… conforme a posição na lista. */
 function clauseLetter(index: number) {
   return String.fromCharCode(65 + index)
@@ -243,7 +275,12 @@ export function ContractDocument({ title, data, contractDate, type }: ContractDo
 
   const isPlural = soldList.length > 1
   const kmLines = soldList.filter((v) => formatKm(v.km))
-  const clauses = isPurchase ? purchaseClauses() : saleClauses(storeName)
+  const clauses =
+    type === 'compra'
+      ? purchaseClauses()
+      : type === 'repasse'
+        ? transferClauses()
+        : saleClauses(storeName)
 
   return (
     <div
@@ -262,16 +299,16 @@ export function ContractDocument({ title, data, contractDate, type }: ContractDo
 
       <h1 className="mb-1.5 text-center text-[12px] font-bold tracking-tight">{title}</h1>
 
-      {/* Cliente — COMPRADOR na venda, VENDEDOR na compra. Mesma grade de 4
-          colunas dos veículos. O RG só entra na compra, que é onde o recibo
-          em papel pede o documento do proprietário. */}
+      {/* Cliente — COMPRADOR na venda e no repasse, VENDEDOR na compra. Mesma
+          grade de 4 colunas dos veículos. O RG entra nos tipos cujo recibo em
+          papel pede o documento do cliente. */}
       <section className="mb-1.5 border border-black/25 px-1.5 py-1">
         <FieldGrid>
           <Field span={2} label={roles.customer} value={buyer.name} />
           <Field label="CPF" value={formatCpf(buyer.cpf)} />
           <Field label="TEL" value={formatPhone(buyer.phone)} />
-          {isPurchase && <Field label="RG" value={buyer.rg} />}
-          <Field span={isPurchase ? 2 : 3} label="ENDERECO" value={buyer.address} />
+          {roles.showsRg && <Field label="RG" value={buyer.rg} />}
+          <Field span={roles.showsRg ? 2 : 3} label="ENDERECO" value={buyer.address} />
           <Field label="NASCIMENTO" value={longDatePt(buyer.birth_date)} />
         </FieldGrid>
       </section>
@@ -296,7 +333,7 @@ export function ContractDocument({ title, data, contractDate, type }: ContractDo
 
       {/* Veículos recebidos na troca — não existe na compra, onde a loja é a
           parte que paga e não há veículo dado como entrada. */}
-      {!isPurchase && trade_ins.length > 0 && (
+      {roles.hasTradeIns && trade_ins.length > 0 && (
         <section className="mb-1.5 space-y-1">
           <h3 className="font-bold">
             {trade_ins.length > 1 ? 'RECEBENDO OS VEICULOS:' : 'RECEBENDO O VEICULO:'}
