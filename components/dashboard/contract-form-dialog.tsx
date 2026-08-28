@@ -517,9 +517,9 @@ export function ContractFormDialog({
         fuel: row.fuel,
         km: row.km,
       })),
-    // Na compra não há veículo de entrada. Zera aqui para o caso de o usuário
-    // ter preenchido trocas e depois trocado o tipo do contrato.
-    trade_ins: isPurchase ? [] : trades.map(({ key: _key, ...rest }) => rest),
+    // Sem veículo de entrada quando a loja é a compradora. Zera aqui para o caso
+    // de o usuário ter preenchido trocas e depois trocado o tipo do contrato.
+    trade_ins: roles.hasTradeIns ? trades.map(({ key: _key, ...rest }) => rest) : [],
     contract_date: contractDate,
     negotiation: {
       summary,
@@ -839,10 +839,10 @@ export function ContractFormDialog({
               </div>
             </Section>
 
-            {/* Veículos recebidos na troca — só na venda. Na compra a loja é
-                quem paga, então não existe veículo dado como entrada; deixar a
-                seção aqui permitiria digitar dados que o documento não imprime. */}
-            {!isPurchase && (
+            {/* Veículos recebidos na troca — não existe na compra, onde a loja é
+                quem paga; deixar a seção aqui permitiria digitar dados que o
+                documento não imprime. */}
+            {roles.hasTradeIns && (
             <Section
               icon={ArrowLeftRight}
               title="Veículos recebidos na troca"
@@ -993,14 +993,26 @@ export function ContractFormDialog({
                   type="time"
                 />
               </div>
-              <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                <p className="text-xs text-muted-foreground">
-                  Garantia fixa de {SALE_WARRANTY.days} dias ou{' '}
-                  {SALE_WARRANTY.km.toLocaleString('pt-BR')} KM (o que ocorrer primeiro), já incluída
-                  na cláusula F do contrato.
-                </p>
-              </div>
+              {/* Só a venda dá garantia; repasse e compra saem sem cobertura da loja. */}
+              {roles.hasWarranty ? (
+                <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">
+                    Garantia fixa de {SALE_WARRANTY.days} dias ou{' '}
+                    {SALE_WARRANTY.km.toLocaleString('pt-BR')} KM (o que ocorrer primeiro), já
+                    incluída na cláusula F do contrato.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">
+                    {isPurchase
+                      ? 'Compra sem garantia da loja: quem vende é o cliente.'
+                      : 'Repasse sem nenhuma garantia da loja, conforme a última cláusula do contrato.'}
+                  </p>
+                </div>
+              )}
             </Section>
 
             {/* Dados do contrato e da loja */}

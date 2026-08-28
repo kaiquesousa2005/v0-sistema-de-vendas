@@ -92,8 +92,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    if (body?.type && body.type !== 'venda') {
-      const cfg = CONTRACT_TYPES[body.type as keyof typeof CONTRACT_TYPES]
+    // `available` na lib é a fonte única da verdade: habilitar um tipo novo lá
+    // basta para o backend aceitá-lo.
+    const requestedType = (body?.type ?? 'venda') as keyof typeof CONTRACT_TYPES
+    if (!CONTRACT_TYPES[requestedType]?.available) {
+      const cfg = CONTRACT_TYPES[requestedType]
       return NextResponse.json(
         { error: `${cfg?.label ?? 'Esse tipo de contrato'} ainda não está disponível.` },
         { status: 400 },
@@ -105,6 +108,7 @@ export async function POST(request: NextRequest) {
     // quando ele finalizar o contrato.
     const isDraft = body?.draft === true
     const data = isDraft ? saleDraftSchema.parse(body) : saleSchema.parse(body)
+    const contractType = data.type
     const sql = neon(process.env.DATABASE_URL!)
 
     const { snapshot, customerName, vehicleLabel, vehicleIds } = await buildSaleSnapshot(
@@ -122,7 +126,7 @@ export async function POST(request: NextRequest) {
 
     await rememberStoreDefaults(sql, storeId, snapshot.store)
 
-    const prefix = CONTRACT_TYPES.venda.prefix
+    const prefix = CONTRACT_TYPES[contractType].prefix
 
     // Numeração sequencial por loja/tipo. Em caso de corrida no índice único,
     // tenta novamente com o próximo número.
@@ -133,7 +137,7 @@ export async function POST(request: NextRequest) {
       const seqRows = await sql`
         SELECT COALESCE(MAX(NULLIF(regexp_replace(contract_number, '\\D', '', 'g'), '')::int), 0) AS last
         FROM contracts
-        WHERE store_id = ${storeId} AND type = 'venda'
+        WHERE store_id = ${storeId} AND type = ${contractType}
       `
       const next = Number(seqRows[0]?.last ?? 0) + 1 + attempt
       const contractNumber = `${prefix}-${String(next).padStart(4, '0')}`
@@ -144,7 +148,7 @@ export async function POST(request: NextRequest) {
             store_id, type, contract_number, customer_id, vehicle_id,
             customer_name, vehicle_label, total_value, contract_date, data
           ) VALUES (
-            ${storeId}, 'venda', ${contractNumber}, ${data.customer_id || null}, ${vehicleIds[0] ?? null},
+            ${storeId}, ${contractType}, ${contractNumber}, ${data.customer_id || null}, ${vehicleIds[0] ?? null},
             ${customerName}, ${vehicleLabel}, ${snapshot.negotiation.total_value},
             ${data.contract_date || todayIso()}, ${JSON.stringify(snapshot)}::jsonb
           )
