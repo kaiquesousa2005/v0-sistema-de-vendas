@@ -135,7 +135,7 @@ export function ContractsList() {
           </p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="gap-2">
-          <FilePlus2 className="h-4 w-4" />
+          <FilePlus2 className="h-4 cursor-pointer w-4" />
           Criar contrato
         </Button>
       </div>
@@ -214,7 +214,7 @@ export function ContractsList() {
                 <button
                   type="button"
                   onClick={() => router.push(`/contratos/${contract.id}`)}
-                  className="min-w-0 flex-1 space-y-2 text-left"
+                  className="min-w-0 cursor-pointer flex-1 space-y-2 text-left"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs font-semibold tabular-nums text-primary">
@@ -255,7 +255,7 @@ export function ContractsList() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                    className="h-8 w-8 p-0 cursor-pointer text-muted-foreground hover:text-foreground"
                     onClick={() => setEditTarget(contract)}
                     aria-label={`Editar contrato ${contract.contract_number}`}
                   >
@@ -264,7 +264,7 @@ export function ContractsList() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                    className="h-8 w-8 p-0 cursor-pointer text-muted-foreground hover:text-foreground"
                     onClick={() => router.push(`/contratos/${contract.id}?print=1`)}
                     aria-label={`Baixar PDF do contrato ${contract.contract_number}`}
                   >
@@ -273,7 +273,7 @@ export function ContractsList() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                    className="h-8 w-8 p-0 cursor-pointer text-muted-foreground hover:text-destructive"
                     onClick={() => setDeleteTarget(contract)}
                     aria-label={`Excluir contrato ${contract.contract_number}`}
                   >
@@ -332,7 +332,7 @@ export function ContractsList() {
                 handleDelete()
               }}
               disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive cursor-pointer text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting ? 'Excluindo...' : 'Excluir'}
             </AlertDialogAction>
