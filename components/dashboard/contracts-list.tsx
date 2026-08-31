@@ -152,7 +152,7 @@ export function ContractsList() {
           />
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 cursor-pointer">
           <Button
             variant={typeFilter === '' ? 'default' : 'outline'}
             size="sm"
