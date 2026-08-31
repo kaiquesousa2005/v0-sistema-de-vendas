@@ -414,11 +414,19 @@ className="mb-1.5 block w-[50%] mx-auto"
               extra={buyer.cpf ? `CPF: ${formatCpf(buyer.cpf)}` : undefined}
               caption={roles.customer}
             />
-            <SignatureLine name={store.seller_name} caption={roles.store}/>
+<SignatureLine
+  name={store.seller_name}
+  caption={roles.store}
+  extra="CNPJ: 23.760.314/0001-98"
+/>
           </>
         ) : (
           <>
-            <SignatureLine name={store.seller_name} caption={roles.store} />
+<SignatureLine
+  name={store.seller_name}
+  caption={roles.store}
+  extra="CNPJ: 23.760.314/0001-98"
+/>
             <SignatureLine
               name={buyer.name}
               extra={buyer.cpf ? `CPF: ${formatCpf(buyer.cpf)}` : undefined}
