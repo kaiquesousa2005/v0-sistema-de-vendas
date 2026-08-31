@@ -44,8 +44,8 @@ export const CONTRACT_TYPES = {
     short: 'Sinal',
     prefix: 'SIN',
     title: 'CONTRATO DE SINAL DE COMPRA DE VEICULO',
-    description: 'Reserva do veículo mediante pagamento de sinal.',
-    available: false,
+    description: 'Reserva do veículo mediante pagamento de sinal, até concretizar a venda.',
+    available: true,
   },
 } as const
 
