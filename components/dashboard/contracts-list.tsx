@@ -134,8 +134,8 @@ export function ContractsList() {
             Gere contratos a partir dos clientes e veículos já cadastrados.
           </p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} className="gap-2">
-          <FilePlus2 className="h-4 cursor-pointer w-4" />
+        <Button onClick={() => setIsDialogOpen(true)} className="gap-2 cursor-pointer">
+          <FilePlus2 className="h-4 w-4" />
           Criar contrato
         </Button>
       </div>
