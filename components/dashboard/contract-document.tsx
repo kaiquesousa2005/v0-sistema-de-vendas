@@ -293,7 +293,7 @@ export function ContractDocument({ title, data, contractDate, type }: ContractDo
       <img
         src="/images/contract-header.png"
         alt="MCar Veículos"
-        className="mb-1.5 block w-full"
+        className="mb-1.5 block w-[60%] mx-auto"
         loading="eager"
       />
 
