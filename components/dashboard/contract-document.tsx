@@ -415,6 +415,9 @@ export function ContractDocument({ title, data, contractDate, type }: ContractDo
               caption={roles.customer}
             />
             <SignatureLine name={store.seller_name} caption={roles.store} />
+            <p className="mt-1 text-center text-xs">
+  CNPJ: 23.760.314/0001-98
+</p>
           </>
         ) : (
           <>
