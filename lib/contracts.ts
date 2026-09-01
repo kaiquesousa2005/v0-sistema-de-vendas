@@ -80,13 +80,20 @@ export function contractRoles(type: ContractType) {
     store: storeIsBuyer ? 'COMPRADOR' : 'VENDEDOR',
     storeIsBuyer,
     /**
+     * O sinal é um recibo curto (cliente reserva o veículo pagando uma entrada
+     * até concretizar a venda), sem cláusulas, negociação, troca ou garantia.
+     * Marcá-lo aqui deixa o documento e o formulário trocarem para o layout
+     * enxuto em vez de tentar renderizar as seções da venda.
+     */
+    isSignal: type === 'sinal',
+    /**
      * Só a venda tem garantia de motor e câmbio. No repasse o carro sai abaixo
      * do valor de mercado justamente por não ter garantia, e na compra quem
      * vende é o cliente, que não assume garantia nenhuma.
      */
     hasWarranty: type === 'venda',
     /** Veículo dado como entrada só existe quando a loja é a vendedora. */
-    hasTradeIns: !storeIsBuyer,
+    hasTradeIns: type === 'venda' || type === 'repasse',
     /** Compra e repasse imprimem o RG do cliente, como nos recibos em papel. */
     showsRg: type === 'compra' || type === 'repasse',
   }
@@ -154,6 +161,16 @@ export interface SaleContractData {
     date: string
     time: string
   }
+  /**
+   * Exclusivo do contrato de sinal. Guarda o valor da entrada, o valor pelo
+   * qual a loja está vendendo e o dia combinado para o cliente concretizar a
+   * compra. Opcional porque nenhum outro tipo de contrato usa esse bloco.
+   */
+  signal?: {
+    signal_value: number
+    sale_value: number
+    deadline_date: string
+  }
   store: ContractStore
 }
 
@@ -202,6 +219,7 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
   const negotiation = (d.negotiation ?? {}) as Record<string, unknown>
   const delivery = (d.delivery ?? {}) as Record<string, unknown>
   const store = (d.store ?? {}) as Record<string, unknown>
+  const signal = d.signal ? (d.signal as Record<string, unknown>) : null
 
   return {
     buyer: {
@@ -220,6 +238,17 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
       observations: str(negotiation.observations),
     },
     delivery: { date: str(delivery.date), time: str(delivery.time) },
+    // Só materializa o bloco quando o snapshot realmente tem sinal; assim os
+    // demais contratos continuam com `signal` indefinido.
+    ...(signal
+      ? {
+          signal: {
+            signal_value: Number(signal.signal_value) || 0,
+            sale_value: Number(signal.sale_value) || 0,
+            deadline_date: toIsoDate(signal.deadline_date as string | Date | null),
+          },
+        }
+      : {}),
     store: {
       name: str(store.name),
       address: str(store.address),
