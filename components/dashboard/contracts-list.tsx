@@ -152,9 +152,10 @@ export function ContractsList() {
           />
         </div>
 
-        <div className="flex flex-wrap gap-2 cursor-pointer">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant={typeFilter === '' ? 'default' : 'outline'}
+            className="cursor-pointer"
             size="sm"
             onClick={() => setTypeFilter('')}
           >
@@ -165,6 +166,7 @@ export function ContractsList() {
               key={key}
               variant={typeFilter === key ? 'default' : 'outline'}
               size="sm"
+              className="cursor-pointer"
               onClick={() => setTypeFilter(key)}
             >
               {CONTRACT_TYPES[key].short}
