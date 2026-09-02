@@ -256,6 +256,63 @@ function clauseLetter(index: number) {
   return String.fromCharCode(65 + index)
 }
 
+/** Dados bancários fixos da loja, exibidos no recibo de sinal. */
+const SIGNAL_BANK_INFO = [
+  'CONTA ITAU JURIDICA',
+  'AG 1587',
+  'CONTA 98551-4',
+  'CNPJ 23.760.314/0001-98',
+  'PIX: MCARVEICULOS2015@GMAIL.COM',
+  'NOME ARLENE FREIRE SOUSA ME',
+]
+
+/**
+ * Corpo do contrato de sinal: um recibo em prosa, sem cláusulas nem grade de
+ * negociação. Declara o valor deixado de sinal, o valor total pelo qual a loja
+ * vende e o prazo (dia + hora) para o cliente concretizar a compra, seguido dos
+ * dados bancários fixos da loja.
+ */
+function SignalBody({
+  buyerName,
+  buyerCpf,
+  vehicle,
+  signal,
+}: {
+  buyerName: string
+  buyerCpf: string
+  vehicle: ContractVehicle
+  signal: NonNullable<ReturnType<typeof normalizeSaleData>['signal']>
+}) {
+  const deadline = signal.deadline_date
+    ? `${longDatePt(signal.deadline_date)}${signal.deadline_time ? ` ÀS ${signal.deadline_time}` : ''}`
+    : '—'
+
+  return (
+    <section className="mb-3 space-y-3 text-[11px] leading-relaxed">
+      <p className="text-justify">
+        <strong>CLIENTE</strong> <Val>{buyerName}</Val>, <strong>PORTADOR DO CPF</strong>{' '}
+        <Val>{formatCpf(buyerCpf)}</Val>, DEIXA DE SINAL O VALOR DE{' '}
+        <strong>{formatCurrency(signal.signal_value)}</strong> PARA A COMPRA DO VEÍCULO{' '}
+        <strong>
+          <Val>{vehicle.brand_model}</Val>
+        </strong>{' '}
+        PLACA: <strong>{<Val>{vehicle.plate}</Val>}</strong>.
+      </p>
+      <p className="text-justify">
+        A LOJA ESTÁ VENDENDO O VEÍCULO NO VALOR DE{' '}
+        <strong>{formatCurrency(signal.sale_value)}</strong>. A LOJA FICA NO AGUARDO DO CLIENTE PARA
+        VIR À LOJA CONCRETIZAR A VENDA NO DIA <strong>{deadline}</strong>.
+      </p>
+      <div className="border border-black/25 px-3 py-2">
+        <div className="mb-1 font-bold">DADOS PARA PAGAMENTO</div>
+        {SIGNAL_BANK_INFO.map((line) => (
+          <div key={line}>{line}</div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 /**
  * Fac-símile do contrato em papel: preto sobre branco em qualquer tema,
  * proporções A4 e quebras de página controladas para impressão/PDF.
@@ -264,7 +321,8 @@ function clauseLetter(index: number) {
  * que roda com o formulário ainda pela metade.
  */
 export function ContractDocument({ title, data, contractDate, type }: ContractDocumentProps) {
-  const { buyer, vehicles, trade_ins, negotiation, delivery, store } = normalizeSaleData(data)
+  const { buyer, vehicles, trade_ins, negotiation, delivery, signal, store } =
+    normalizeSaleData(data)
   const storeName = store.name || 'A LOJA'
   const roles = contractRoles(type)
   const isPurchase = roles.storeIsBuyer

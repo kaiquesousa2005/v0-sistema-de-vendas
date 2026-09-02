@@ -170,6 +170,7 @@ export interface SaleContractData {
     signal_value: number
     sale_value: number
     deadline_date: string
+    deadline_time: string
   }
   store: ContractStore
 }
@@ -246,6 +247,7 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
             signal_value: Number(signal.signal_value) || 0,
             sale_value: Number(signal.sale_value) || 0,
             deadline_date: toIsoDate(signal.deadline_date as string | Date | null),
+            deadline_time: str(signal.deadline_time),
           },
         }
       : {}),

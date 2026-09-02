@@ -32,8 +32,20 @@ const soldVehicleSchema = z.object({
   km: z.string().trim().default(''),
 })
 
+/**
+ * Bloco exclusivo do contrato de sinal: valor da entrada, valor total pelo qual
+ * a loja vende e o prazo (dia + hora) combinado para concretizar a compra.
+ * Tudo default/opcional para a prévia rodar com o formulário pela metade.
+ */
+const signalSchema = z.object({
+  signal_value: z.coerce.number().nonnegative().default(0),
+  sale_value: z.coerce.number().nonnegative().default(0),
+  deadline_date: z.string().trim().default(''),
+  deadline_time: z.string().trim().default(''),
+})
+
 const baseFields = {
-  type: z.enum(['venda', 'compra', 'repasse']).default('venda'),
+  type: z.enum(['venda', 'compra', 'repasse', 'sinal']).default('venda'),
   customer_id: z.coerce.number().int().positive(),
   vehicles: z.array(soldVehicleSchema),
   /**
@@ -58,6 +70,8 @@ const baseFields = {
     time: z.string().trim().default(''),
   }),
 
+  signal: signalSchema.default({}),
+
   store: z.object({
     address: z.string().trim().default(''),
     city: z.string().trim().default(''),
@@ -65,33 +79,63 @@ const baseFields = {
   }),
 }
 
-/** Salvar exige cliente, veículo, negociação e vendedor. */
+/**
+ * Salvar exige cliente, veículo e vendedor. As demais exigências variam por
+ * tipo e são aplicadas no `superRefine`: venda/compra/repasse pedem forma de
+ * negociação; o sinal pede valor do sinal, valor de venda e prazo.
+ */
 export const saleSchema = z
   .object({
     ...baseFields,
     customer_id: z.coerce.number().int().positive('Selecione o cliente'),
     contract_date: z.string().min(10, 'Data do contrato obrigatória'),
-    negotiation: z.object({
-      summary: z.string().trim().min(1, 'Descreva a forma de negociação'),
-      total_value: z.coerce.number().nonnegative('Valor inválido'),
-      observations: z.string().trim().default(''),
-    }),
     store: z.object({
       address: z.string().trim().default(''),
       city: z.string().trim().default(''),
       seller_name: z.string().trim().min(1, 'Informe o nome do vendedor'),
     }),
   })
-  // Checagem cruzada em vez de `vehicles.min(1)`: na compra o veículo pode vir
-  // do estoque OU ser digitado, e exigir a lista do estoque bloquearia o
-  // preenchimento manual.
   .superRefine((value, ctx) => {
+    // Veículo: aceita do estoque OU digitado, então checa a soma em vez de
+    // `vehicles.min(1)`, que bloquearia o preenchimento manual da compra.
     const hasVehicle = value.vehicles.length > 0 || value.manual_vehicles.length > 0
     if (!hasVehicle) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['vehicles'],
         message: 'Informe ao menos um veículo',
+      })
+    }
+
+    if (value.type === 'sinal') {
+      // O sinal é um recibo de reserva: o que importa é o valor da entrada, o
+      // valor total do veículo e o prazo para concretizar.
+      if (!(value.signal.signal_value > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['signal', 'signal_value'],
+          message: 'Informe o valor do sinal',
+        })
+      }
+      if (!(value.signal.sale_value > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['signal', 'sale_value'],
+          message: 'Informe o valor total do veículo',
+        })
+      }
+      if (!value.signal.deadline_date) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['signal', 'deadline_date'],
+          message: 'Informe a data para finalizar a negociação',
+        })
+      }
+    } else if (!value.negotiation.summary.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['negotiation', 'summary'],
+        message: 'Descreva a forma de negociação',
       })
     }
   })
@@ -247,6 +291,18 @@ export async function buildSaleSnapshot(
       date: data.delivery?.date ?? '',
       time: data.delivery?.time ?? '',
     },
+    // Só grava o bloco de sinal para contratos de sinal, mantendo os demais
+    // snapshots sem a chave `signal`.
+    ...(data.type === 'sinal'
+      ? {
+          signal: {
+            signal_value: Number(data.signal?.signal_value) || 0,
+            sale_value: Number(data.signal?.sale_value) || 0,
+            deadline_date: data.signal?.deadline_date ?? '',
+            deadline_time: data.signal?.deadline_time ?? '',
+          },
+        }
+      : {}),
     store: {
       // `trade_name` (nome fantasia) é o nome citado nas cláusulas de garantia
       name: String(store.trade_name || store.store_name || '').toUpperCase(),
