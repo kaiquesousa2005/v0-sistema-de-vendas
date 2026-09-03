@@ -357,6 +357,18 @@ className="mb-1.5 block w-[50%] mx-auto"
 
       <h1 className="mb-1.5 text-center text-[12px] font-bold tracking-tight">{title}</h1>
 
+      {/* O sinal é um recibo curto: sem grade de cliente/veículo, cláusulas,
+          troca ou negociação — só o texto do SignalBody com os dados embutidos
+          na frase, igual ao recibo em papel. */}
+      {roles.isSignal ? (
+        <SignalBody
+          buyerName={buyer.name}
+          buyerCpf={buyer.cpf}
+          vehicle={soldList[0]}
+          signal={signal ?? { signal_value: 0, sale_value: 0, deadline_date: '', deadline_time: '' }}
+        />
+      ) : (
+        <>
       {/* Cliente — COMPRADOR na venda e no repasse, VENDEDOR na compra. Mesma
           grade de 4 colunas dos veículos. O RG entra nos tipos cujo recibo em
           papel pede o documento do cliente. */}
@@ -453,6 +465,8 @@ className="mb-1.5 block w-[50%] mx-auto"
           </li>
         )}
       </ol>
+        </>
+      )}
 
       {/* Local e data */}
       <p className="mb-1 text-center font-semibold">

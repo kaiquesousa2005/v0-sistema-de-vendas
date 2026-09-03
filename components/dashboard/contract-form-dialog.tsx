@@ -242,6 +242,13 @@ export function ContractFormDialog({
   const [totalValue, setTotalValue] = useState('')
   const [observations, setObservations] = useState('')
 
+  // Exclusivos do contrato de sinal: valor da entrada e valor total do
+  // veículo. `deliveryDate`/`deliveryTime` são reaproveitados como o prazo
+  // para concretizar a compra — no sinal a seção "Entrega" muda de nome e
+  // de sentido para "Finalização da Negociação", mas o par data/hora é o mesmo.
+  const [signalValue, setSignalValue] = useState('')
+  const [saleValue, setSaleValue] = useState('')
+
   const [contractDate, setContractDate] = useState(todayIso())
   const [deliveryDate, setDeliveryDate] = useState(todayIso())
   const [deliveryTime, setDeliveryTime] = useState('')
@@ -263,6 +270,8 @@ export function ContractFormDialog({
     setSummary('')
     setTotalValue('')
     setObservations('')
+    setSignalValue('')
+    setSaleValue('')
     setContractDate(todayIso())
     setDeliveryDate(todayIso())
     setDeliveryTime('')
@@ -346,9 +355,14 @@ export function ContractFormDialog({
         setSummary(data.negotiation.summary)
         setTotalValue(data.negotiation.total_value ? String(data.negotiation.total_value) : '')
         setObservations(data.negotiation.observations)
+        setSignalValue(data.signal?.signal_value ? String(data.signal.signal_value) : '')
+        setSaleValue(data.signal?.sale_value ? String(data.signal.sale_value) : '')
         setContractDate(toIsoDate(payload.contract_date) || todayIso())
-        setDeliveryDate(data.delivery.date || '')
-        setDeliveryTime(data.delivery.time || '')
+        // No sinal, o prazo vem de `signal.deadline_*`; nos demais tipos, de
+        // `delivery`. Os dois compartilham os mesmos campos de data/hora do
+        // formulário.
+        setDeliveryDate(data.signal?.deadline_date || data.delivery.date || '')
+        setDeliveryTime(data.signal?.deadline_time || data.delivery.time || '')
         setStoreAddress(data.store.address)
         setStoreCity(data.store.city)
         setSellerName(data.store.seller_name)
@@ -446,7 +460,9 @@ export function ContractFormDialog({
     trades.length > 0 ||
     summary.trim() !== '' ||
     totalValue.trim() !== '' ||
-    observations.trim() !== ''
+    observations.trim() !== '' ||
+    signalValue.trim() !== '' ||
+    saleValue.trim() !== ''
 
   /**
    * Intercepta todas as formas de fechar (X, clique fora e Esc) — o Radix
@@ -526,7 +542,17 @@ export function ContractFormDialog({
       total_value: Number(totalValue) || 0,
       observations,
     },
-    delivery: { date: deliveryDate, time: deliveryTime },
+    // No sinal, data/hora significam o prazo para concretizar a compra, então
+    // vão para `signal.deadline_*` em vez de `delivery`.
+    delivery: roles.isSignal ? { date: '', time: '' } : { date: deliveryDate, time: deliveryTime },
+    signal: roles.isSignal
+      ? {
+          signal_value: Number(signalValue) || 0,
+          sale_value: Number(saleValue) || 0,
+          deadline_date: deliveryDate,
+          deadline_time: deliveryTime,
+        }
+      : undefined,
     store: { address: storeAddress, city: storeCity, seller_name: sellerName },
   })
 
@@ -564,7 +590,20 @@ export function ContractFormDialog({
       toast.error('Selecione ao menos um veículo vendido')
       return
     }
-    if (!summary.trim()) {
+    if (roles.isSignal) {
+      if (!(Number(signalValue) > 0)) {
+        toast.error('Informe o valor do sinal')
+        return
+      }
+      if (!(Number(saleValue) > 0)) {
+        toast.error('Informe o valor total do veículo')
+        return
+      }
+      if (!deliveryDate) {
+        toast.error('Informe a data para finalizar a negociação')
+        return
+      }
+    } else if (!summary.trim()) {
       toast.error('Descreva a forma de negociação')
       return
     }
@@ -947,72 +986,105 @@ export function ContractFormDialog({
             </Section>
             )}
 
-            {/* Negociação */}
+            {/* Negociação — no sinal os campos são outros: valor da entrada e
+                valor total do veículo, sem a "forma de negociação" das vendas. */}
             <Section icon={HandCoins} title="Negociação">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field
-                  label="Forma de negociação"
-                  value={summary}
-                  onChange={setSummary}
-                  placeholder="NEGOCIAÇÃO (AVISTA + FINANCIAMENTO)"
-                  required
-                />
-                <Field
-                  label="Valor total (R$)"
-                  value={totalValue}
-                  onChange={setTotalValue}
-                  placeholder="VALOR DA VENDA"
-                  type="number"
-                  required
-                />
-              </div>
+              {roles.isSignal ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Valor do sinal (R$)"
+                    value={signalValue}
+                    onChange={setSignalValue}
+                    placeholder="VALOR DEIXADO DE SINAL"
+                    type="number"
+                    required
+                  />
+                  <Field
+                    label="Valor total do veículo (R$)"
+                    value={saleValue}
+                    onChange={setSaleValue}
+                    placeholder="VALOR PELO QUAL A LOJA ESTÁ VENDENDO"
+                    type="number"
+                    required
+                  />
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Forma de negociação"
+                    value={summary}
+                    onChange={setSummary}
+                    placeholder="NEGOCIAÇÃO (AVISTA + FINANCIAMENTO)"
+                    required
+                  />
+                  <Field
+                    label="Valor total (R$)"
+                    value={totalValue}
+                    onChange={setTotalValue}
+                    placeholder="VALOR DA VENDA"
+                    type="number"
+                    required
+                  />
+                </div>
+              )}
 
               <AreaField
-                label="Observações da negociação"
+                label="Observações"
                 value={observations}
                 onChange={setObservations}
-                placeholder="**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO..."
-                hint="Aparece no contrato como OBS, logo abaixo do valor. Detalhe entradas, parcelas, descontos e prazos."
-                rows={5}
+                placeholder={
+                  roles.isSignal
+                    ? 'Detalhes adicionais sobre o sinal, se necessário...'
+                    : '**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO...'
+                }
+                hint={
+                  roles.isSignal
+                    ? undefined
+                    : 'Aparece no contrato como OBS, logo abaixo do valor. Detalhe entradas, parcelas, descontos e prazos.'
+                }
+                rows={roles.isSignal ? 3 : 5}
               />
             </Section>
 
-            {/* Entrega */}
-            <Section icon={FileText} title="Entrega">
+            {/* Entrega — no sinal essa seção passa a ser o prazo para o cliente
+                concretizar a compra ("Finalização da Negociação"), sem caixa de
+                garantia: o sinal não promete cobertura nenhuma de motor/câmbio. */}
+            <Section icon={FileText} title={roles.isSignal ? 'Finalização da Negociação' : 'Entrega'}>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
-                  label="Data de entrega"
+                  label={roles.isSignal ? 'Data para finalizar' : 'Data de entrega'}
                   value={deliveryDate}
                   onChange={setDeliveryDate}
                   type="date"
+                  required={roles.isSignal}
                 />
                 <Field
-                  label="Hora de entrega"
+                  label={roles.isSignal ? 'Horário para finalizar' : 'Hora de entrega'}
                   value={deliveryTime}
                   onChange={setDeliveryTime}
                   type="time"
                 />
               </div>
-              {/* Só a venda dá garantia; repasse e compra saem sem cobertura da loja. */}
-              {roles.hasWarranty ? (
-                <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">
-                    Garantia fixa de {SALE_WARRANTY.days} dias ou{' '}
-                    {SALE_WARRANTY.km.toLocaleString('pt-BR')} KM (o que ocorrer primeiro), já
-                    incluída na cláusula F do contrato.
-                  </p>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">
-                    {isPurchase
-                      ? 'Compra sem garantia da loja: quem vende é o cliente.'
-                      : 'Repasse sem nenhuma garantia da loja, conforme a última cláusula do contrato.'}
-                  </p>
-                </div>
-              )}
+              {!roles.isSignal &&
+                (roles.hasWarranty ? (
+                  <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">
+                      Garantia fixa de {SALE_WARRANTY.days} dias ou{' '}
+                      {SALE_WARRANTY.km.toLocaleString('pt-BR')} KM (o que ocorrer primeiro), já
+                      incluída na cláusula F do contrato.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">
+                      {isPurchase
+                        ? 'Compra sem garantia da loja: quem vende é o cliente.'
+                        : 'Repasse sem nenhuma garantia da loja, conforme a última cláusula do contrato.'}
+                    </p>
+                  </div>
+                ))}
             </Section>
 
             {/* Dados do contrato e da loja */}
