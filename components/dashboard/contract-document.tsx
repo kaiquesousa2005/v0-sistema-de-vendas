@@ -267,19 +267,17 @@ const SIGNAL_BANK_INFO = [
 ]
 
 /**
- * Corpo do contrato de sinal: um recibo em prosa, sem cláusulas nem grade de
- * negociação. Declara o valor deixado de sinal, o valor total pelo qual a loja
- * vende e o prazo (dia + hora) para o cliente concretizar a compra, seguido dos
- * dados bancários fixos da loja.
+ * Corpo do contrato de sinal. Reaproveita as grades da venda — dados do cliente
+ * e do veículo — e abaixo mostra o bloco do sinal (valor da entrada, valor total
+ * do veículo e o prazo para concretizar a compra) seguido dos dados bancários
+ * fixos da loja. Não tem cláusulas: é apenas o recibo do sinal.
  */
 function SignalBody({
-  buyerName,
-  buyerCpf,
+  buyer,
   vehicle,
   signal,
 }: {
-  buyerName: string
-  buyerCpf: string
+  buyer: ReturnType<typeof normalizeSaleData>['buyer']
   vehicle: ContractVehicle
   signal: NonNullable<ReturnType<typeof normalizeSaleData>['signal']>
 }) {
@@ -288,28 +286,49 @@ function SignalBody({
     : '—'
 
   return (
-    <section className="mb-3 space-y-3 text-[11px] leading-relaxed">
-      <p className="text-justify">
-        <strong>CLIENTE</strong> <Val>{buyerName}</Val>, <strong>PORTADOR DO CPF</strong>{' '}
-        <Val>{formatCpf(buyerCpf)}</Val>, DEIXA DE SINAL O VALOR DE{' '}
-        <strong>{formatCurrency(signal.signal_value)}</strong> PARA A COMPRA DO VEÍCULO{' '}
-        <strong>
-          <Val>{vehicle.brand_model}</Val>
-        </strong>{' '}
-        PLACA: <strong>{<Val>{vehicle.plate}</Val>}</strong>.
-      </p>
-      <p className="text-justify">
-        A LOJA ESTÁ VENDENDO O VEÍCULO NO VALOR DE{' '}
-        <strong>{formatCurrency(signal.sale_value)}</strong>. A LOJA FICA NO AGUARDO DO CLIENTE PARA
-        VIR À LOJA CONCRETIZAR A VENDA NO DIA <strong>{deadline}</strong>.
-      </p>
-      <div className="border border-black/25 px-3 py-2">
-        <div className="mb-1 font-bold">DADOS PARA PAGAMENTO</div>
+    <>
+      {/* Dados do cliente — mesma grade de 4 colunas da venda. */}
+      <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+        <FieldGrid>
+          <Field span={2} label="CLIENTE" value={buyer.name} />
+          <Field label="CPF" value={formatCpf(buyer.cpf)} />
+          <Field label="TEL" value={formatPhone(buyer.phone)} />
+          <Field label="RG" value={buyer.rg} />
+          <Field span={2} label="ENDERECO" value={buyer.address} />
+          <Field label="NASCIMENTO" value={longDatePt(buyer.birth_date)} />
+        </FieldGrid>
+      </section>
+
+      {/* Dados do veículo — o mesmo bloco usado na venda. */}
+      <h2 className="font-bold">VEICULO DO SINAL DE COMPRA</h2>
+      <section className="mb-1.5 space-y-1">
+        <VehicleBlock vehicle={vehicle} index={0} total={1} />
+      </section>
+
+      {/* Bloco do sinal: valores e prazo para concretizar a compra. */}
+      <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-bold">VALOR DO SINAL:</span>
+          <span className="font-bold tabular-nums">{formatCurrency(signal.signal_value)}</span>
+        </div>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-bold">VALOR TOTAL DO VEICULO:</span>
+          <span className="font-bold tabular-nums">{formatCurrency(signal.sale_value)}</span>
+        </div>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-bold">FINALIZACAO DA NEGOCIACAO:</span>
+          <span className="font-semibold">{deadline}</span>
+        </div>
+      </section>
+
+      {/* Dados bancários fixos: conta para onde o sinal foi enviado. */}
+      <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+        <div className="mb-0.5 font-bold">DADOS PARA PAGAMENTO</div>
         {SIGNAL_BANK_INFO.map((line) => (
           <div key={line}>{line}</div>
         ))}
-      </div>
-    </section>
+      </section>
+    </>
   )
 }
 
@@ -357,13 +376,11 @@ className="mb-1.5 block w-[50%] mx-auto"
 
       <h1 className="mb-1.5 text-center text-[12px] font-bold tracking-tight">{title}</h1>
 
-      {/* O sinal é um recibo curto: sem grade de cliente/veículo, cláusulas,
-          troca ou negociação — só o texto do SignalBody com os dados embutidos
-          na frase, igual ao recibo em papel. */}
+      {/* O sinal é um recibo: grade do cliente e do veículo como na venda,
+          seguidas do bloco do sinal e dos dados bancários. Sem cláusulas. */}
       {roles.isSignal ? (
         <SignalBody
-          buyerName={buyer.name}
-          buyerCpf={buyer.cpf}
+          buyer={buyer}
           vehicle={soldList[0]}
           signal={signal ?? { signal_value: 0, sale_value: 0, deadline_date: '', deadline_time: '' }}
         />
