@@ -310,6 +310,67 @@ function consignmentClauses(storeName: string): React.ReactNode[] {
   ]
 }
 
+/**
+ * Cláusulas do contrato de devolução, redigidas para proteger a loja ao máximo.
+ *
+ * Registram que a compra foi presencial (sem direito de arrependimento do art.
+ * 49 do CDC), que a devolução é feita por mera liberalidade da loja, que o
+ * veículo é recebido no estado em que se encontra e — o ponto crítico — que a
+ * devolução só é aceita com o veículo TOTALMENTE QUITADO, ficando todos os
+ * juros e encargos do financiamento por conta exclusiva do comprador. Fecham
+ * com a quitação plena e irrevogável dando à loja segurança jurídica.
+ */
+function returnClauses(storeName: string): React.ReactNode[] {
+  return [
+    <>
+      AS PARTES DECLARAM QUE A COMPRA E VENDA DO VEÍCULO ACIMA DESCRITO FOI REALIZADA DE FORMA
+      PRESENCIAL, NO ESTABELECIMENTO DA {storeName}, TENDO O COMPRADOR VISTORIADO, TESTADO E EXAMINADO
+      O VEÍCULO POR MECÂNICO DE SUA CONFIANÇA ANTES DA AQUISIÇÃO. POR NÃO SE TRATAR DE COMPRA REALIZADA
+      FORA DO ESTABELECIMENTO COMERCIAL OU À DISTÂNCIA, NÃO SE APLICA O DIREITO DE ARREPENDIMENTO
+      PREVISTO NO ARTIGO 49 DO CÓDIGO DE DEFESA DO CONSUMIDOR.
+    </>,
+    <>
+      O COMPRADOR RECONHECE QUE A LOJA NÃO TEM QUALQUER OBRIGAÇÃO LEGAL OU CONTRATUAL DE ACEITAR A
+      DEVOLUÇÃO DO VEÍCULO. A LOJA, EXCLUSIVAMENTE POR MERA LIBERALIDADE E COMO ATO DE CORTESIA, ACEITA
+      RECEBER O VEÍCULO DE VOLTA, SEM QUE ISSO CONSTITUA RECONHECIMENTO DE VÍCIO, DEFEITO OU CULPA, NEM
+      GERE PRECEDENTE OU OBRIGAÇÃO PARA FUTURAS NEGOCIAÇÕES.
+    </>,
+    <>
+      A LOJA RECEBE O VEÍCULO NO ESTADO FÍSICO, MECÂNICO E DOCUMENTAL EM QUE ELE SE ENCONTRA NESTA
+      DATA, COM O DESGASTE NATURAL DO USO E A QUILOMETRAGEM ATUAL. EVENTUAIS AVARIAS, FALTAS DE PEÇAS,
+      ACESSÓRIOS OU DANOS EXISTENTES SERÃO AVALIADOS E PODERÃO SER DEDUZIDOS DO VALOR A SER RESTITUÍDO.
+    </>,
+    <>
+      CASO O VEÍCULO TENHA SIDO OBJETO DE FINANCIAMENTO, CONSÓRCIO OU QUALQUER MODALIDADE DE CRÉDITO, A
+      DEVOLUÇÃO SOMENTE SERÁ ACEITA COM O VEÍCULO TOTALMENTE QUITADO E LIVRE DE QUALQUER GRAVAME,
+      ALIENAÇÃO FIDUCIÁRIA OU RESTRIÇÃO. TODOS OS JUROS, ENCARGOS, TARIFAS, SEGUROS E CUSTOS DECORRENTES
+      DO FINANCIAMENTO SÃO DE RESPONSABILIDADE EXCLUSIVA DO COMPRADOR, NADA PODENDO SER COBRADO DA LOJA
+      A ESSE TÍTULO.
+    </>,
+    <>
+      MULTAS DE TRÂNSITO, IPVA, LICENCIAMENTO, PEDÁGIOS E QUAISQUER DÉBITOS OU INFRAÇÕES GERADOS NO
+      PERÍODO EM QUE O VEÍCULO ESTEVE NA POSSE DO COMPRADOR SÃO DE SUA INTEIRA RESPONSABILIDADE, BEM
+      COMO A PONTUAÇÃO JUNTO AO DETRAN, FICANDO A LOJA AUTORIZADA A DESCONTAR TAIS VALORES DO MONTANTE A
+      SER RESTITUÍDO.
+    </>,
+    <>
+      DO VALOR A SER RESTITUÍDO PODERÃO SER DEDUZIDOS OS CUSTOS DE REPARO, HIGIENIZAÇÃO, REGULARIZAÇÃO
+      DOCUMENTAL, TRIBUTOS, TARIFAS E DEMAIS DESPESAS ADMINISTRATIVAS INCORRIDAS PELA LOJA EM RAZÃO DA
+      VENDA E DA DEVOLUÇÃO, CIENTE E DE ACORDO O COMPRADOR.
+    </>,
+    <>
+      COM O RECEBIMENTO DO VALOR ORA AJUSTADO E A ENTREGA DO VEÍCULO, AS PARTES DÃO ENTRE SI PLENA,
+      GERAL, RASA E IRREVOGÁVEL QUITAÇÃO DO NEGÓCIO ORIGINAL E DESTA DEVOLUÇÃO, PARA NADA MAIS
+      RECLAMAREM UMA DA OUTRA, A QUALQUER TÍTULO, TEMPO OU PRETEXTO, SEJA EM JUÍZO OU FORA DELE.
+    </>,
+    <>
+      O COMPRADOR DECLARA QUE A PRESENTE DEVOLUÇÃO É ESPONTÂNEA, FEITA DE LIVRE E ESPONTÂNEA VONTADE,
+      SEM QUALQUER VÍCIO DE CONSENTIMENTO, COAÇÃO OU INDUÇÃO, ESTANDO CIENTE E DE PLENO ACORDO COM TODAS
+      AS CONDIÇÕES ACIMA ESTABELECIDAS.
+    </>,
+  ]
+}
+
 /** Letras das cláusulas: A), B), C)… conforme a posição na lista. */
 function clauseLetter(index: number) {
   return String.fromCharCode(65 + index)
@@ -476,6 +537,90 @@ function ConsignmentBody({
 }
 
 /**
+ * Corpo do contrato de devolução. Reaproveita as grades da venda — dados do
+ * comprador (com RG) e do veículo devolvido — e inclui um bloco com a data/hora
+ * da compra original e da devolução, a forma de pagamento da restituição e o
+ * valor a restituir, seguido das cláusulas de proteção da loja.
+ */
+function ReturnBody({
+  buyer,
+  vehicle,
+  returnInfo,
+  observations,
+  storeName,
+}: {
+  buyer: ReturnType<typeof normalizeSaleData>['buyer']
+  vehicle: ContractVehicle
+  returnInfo: NonNullable<ReturnType<typeof normalizeSaleData>['returnInfo']>
+  observations: string
+  storeName: string
+}) {
+  const clauses = returnClauses(storeName)
+  const purchaseMoment = returnInfo.purchase_date
+    ? `${longDatePt(returnInfo.purchase_date)}${returnInfo.purchase_time ? ` ÀS ${returnInfo.purchase_time}` : ''}`
+    : '—'
+  const returnMoment = returnInfo.return_date
+    ? `${longDatePt(returnInfo.return_date)}${returnInfo.return_time ? ` ÀS ${returnInfo.return_time}` : ''}`
+    : '—'
+
+  return (
+    <>
+      {/* Comprador que devolve — mesma grade de 4 colunas da venda, com RG. */}
+      <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+        <FieldGrid>
+          <Field span={2} label="COMPRADOR" value={buyer.name} />
+          <Field label="CPF" value={formatCpf(buyer.cpf)} />
+          <Field label="TEL" value={formatPhone(buyer.phone)} />
+          <Field label="RG" value={buyer.rg} />
+          <Field span={2} label="ENDERECO" value={buyer.address} />
+          <Field label="NASCIMENTO" value={longDatePt(buyer.birth_date)} />
+        </FieldGrid>
+      </section>
+
+      {/* Veículo devolvido — o mesmo bloco usado na venda. */}
+      <h2 className="font-bold">VEICULO DEVOLVIDO</h2>
+      <section className="mb-1.5 space-y-1">
+        <VehicleBlock vehicle={vehicle} index={0} total={1} />
+      </section>
+
+      {/* Datas da compra e da devolução, forma de pagamento e valor a restituir. */}
+      <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+        <FieldGrid>
+          <Field span={2} label="DATA E HORA DA COMPRA" value={purchaseMoment} />
+          <Field span={2} label="DATA E HORA DA DEVOLUCAO" value={returnMoment} />
+        </FieldGrid>
+        <div className="mt-1 flex items-baseline justify-between gap-3">
+          <div className="min-w-0">
+            <span className="font-bold">FORMA DE PAGAMENTO DA DEVOLUCAO:</span>{' '}
+            <span className="break-words">
+              <Val>{returnInfo.payment_method}</Val>
+            </span>
+          </div>
+          <div className="shrink-0 font-bold tabular-nums">
+            VALOR RESTITUIDO: {formatCurrency(returnInfo.return_value)}
+          </div>
+        </div>
+        {observations && (
+          <p className="mt-1 whitespace-pre-wrap">
+            <strong>OBS:</strong> {observations}
+          </p>
+        )}
+      </section>
+
+      {/* Cláusulas de devolução e quitação. */}
+      <h2 className="font-bold">FICA COMBINADO ENTRE AS PARTES:</h2>
+      <ol className="mb-2 space-y-0.5 text-justify text-[8px] leading-[1.3]">
+        {clauses.map((clause, i) => (
+          <li key={i}>
+            {clauseLetter(i)}) {clause}
+          </li>
+        ))}
+      </ol>
+    </>
+  )
+}
+
+/**
  * Fac-símile do contrato em papel: preto sobre branco em qualquer tema,
  * proporções A4 e quebras de página controladas para impressão/PDF.
  *
@@ -483,7 +628,7 @@ function ConsignmentBody({
  * que roda com o formulário ainda pela metade.
  */
 export function ContractDocument({ title, data, contractDate, type }: ContractDocumentProps) {
-  const { buyer, owner, vehicles, trade_ins, negotiation, delivery, signal, store } =
+  const { buyer, owner, vehicles, trade_ins, negotiation, delivery, signal, returnInfo, store } =
     normalizeSaleData(data)
   const storeName = store.name || 'A LOJA'
   const roles = contractRoles(type)
@@ -533,6 +678,23 @@ className="mb-1.5 block w-[50%] mx-auto"
           owner={owner}
           vehicles={soldList}
           negotiation={negotiation}
+          storeName={storeName}
+        />
+      ) : roles.isReturn ? (
+        <ReturnBody
+          buyer={buyer}
+          vehicle={soldList[0]}
+          returnInfo={
+            returnInfo ?? {
+              purchase_date: '',
+              purchase_time: '',
+              return_date: '',
+              return_time: '',
+              payment_method: '',
+              return_value: 0,
+            }
+          }
+          observations={negotiation.observations}
           storeName={storeName}
         />
       ) : (

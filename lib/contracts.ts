@@ -19,9 +19,9 @@ export const CONTRACT_TYPES = {
     label: 'Contrato de Devolução',
     short: 'Devolução',
     prefix: 'DEV',
-    title: 'CONTRATO DE DEVOLUÇÃO DE VEICULO',
-    description: 'Devolução de veículo por parte do comprador.',
-    available: false,
+    title: 'CONTRATO DE DEVOLUÇÃO DE VEICULO E TERMO DE QUITAÇÃO',
+    description: 'Devolução de veículo pelo comprador, com quitação e restituição de valor.',
+    available: true,
   },
   repasse: {
     label: 'Contrato de Repasse',
@@ -97,6 +97,13 @@ export function contractRoles(type: ContractType) {
      */
     isConsignment,
     /**
+     * A devolução tem layout próprio: comprador que devolve, veículo devolvido,
+     * datas da compra e da devolução, forma de pagamento e valor a restituir,
+     * além de cláusulas que protegem a loja (compra presencial, devolução por
+     * liberalidade, exigência de veículo quitado). Sem troca nem garantia.
+     */
+    isReturn: type === 'devolucao',
+    /**
      * Só a venda tem garantia de motor e câmbio. No repasse o carro sai abaixo
      * do valor de mercado justamente por não ter garantia, e na compra quem
      * vende é o cliente, que não assume garantia nenhuma.
@@ -104,8 +111,8 @@ export function contractRoles(type: ContractType) {
     hasWarranty: type === 'venda',
     /** Veículo dado como entrada só existe quando a loja é a vendedora. */
     hasTradeIns: type === 'venda' || type === 'repasse',
-    /** Compra e repasse imprimem o RG do cliente, como nos recibos em papel. */
-    showsRg: type === 'compra' || type === 'repasse',
+    /** Compra, repasse e devolução imprimem o RG do cliente, como nos recibos em papel. */
+    showsRg: type === 'compra' || type === 'repasse' || type === 'devolucao',
   }
 }
 
@@ -191,6 +198,19 @@ export interface SaleContractData {
     deadline_date: string
     deadline_time: string
   }
+  /**
+   * Exclusivo do contrato de devolução. Guarda a data/hora da compra original e
+   * da devolução, a forma de pagamento (restituição) e o valor a restituir ao
+   * comprador. Opcional porque nenhum outro tipo de contrato usa esse bloco.
+   */
+  returnInfo?: {
+    purchase_date: string
+    purchase_time: string
+    return_date: string
+    return_time: string
+    payment_method: string
+    return_value: number
+  }
   store: ContractStore
 }
 
@@ -241,6 +261,7 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
   const delivery = (d.delivery ?? {}) as Record<string, unknown>
   const store = (d.store ?? {}) as Record<string, unknown>
   const signal = d.signal ? (d.signal as Record<string, unknown>) : null
+  const returnInfo = d.returnInfo ? (d.returnInfo as Record<string, unknown>) : null
 
   return {
     buyer: {
@@ -272,6 +293,18 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
             sale_value: Number(signal.sale_value) || 0,
             deadline_date: toIsoDate(signal.deadline_date as string | Date | null),
             deadline_time: str(signal.deadline_time),
+          },
+        }
+      : {}),
+    ...(returnInfo
+      ? {
+          returnInfo: {
+            purchase_date: toIsoDate(returnInfo.purchase_date as string | Date | null),
+            purchase_time: str(returnInfo.purchase_time),
+            return_date: toIsoDate(returnInfo.return_date as string | Date | null),
+            return_time: str(returnInfo.return_time),
+            payment_method: str(returnInfo.payment_method),
+            return_value: Number(returnInfo.return_value) || 0,
           },
         }
       : {}),
@@ -374,6 +407,9 @@ export function missingContractFields(data: unknown, type: ContractType = 'venda
     if (!d.signal?.deadline_date) missing.push('Finalização')
   } else if (roles.isConsignment) {
     if (!d.negotiation.total_value) missing.push('Valor acertado')
+  } else if (roles.isReturn) {
+    if (!d.returnInfo?.return_value) missing.push('Valor da devolução')
+    if (!d.returnInfo?.return_date) missing.push('Data da devolução')
   } else {
     if (!d.negotiation.summary) missing.push('Forma de negociação')
     if (!d.negotiation.total_value) missing.push('Valor')

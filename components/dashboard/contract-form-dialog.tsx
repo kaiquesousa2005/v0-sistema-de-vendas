@@ -261,6 +261,12 @@ export function ContractFormDialog({
   const [signalValue, setSignalValue] = useState('')
   const [saleValue, setSaleValue] = useState('')
 
+  // Exclusivos do contrato de devolução: dia e horário da compra original. O
+  // dia e horário da devolução reaproveitam `deliveryDate`/`deliveryTime`, a
+  // forma de pagamento reaproveita `summary` e o valor a restituir, `totalValue`.
+  const [purchaseDate, setPurchaseDate] = useState('')
+  const [purchaseTime, setPurchaseTime] = useState('')
+
   const [contractDate, setContractDate] = useState(todayIso())
   const [deliveryDate, setDeliveryDate] = useState(todayIso())
   const [deliveryTime, setDeliveryTime] = useState('')
@@ -287,6 +293,8 @@ export function ContractFormDialog({
     setObservations('')
     setSignalValue('')
     setSaleValue('')
+    setPurchaseDate('')
+    setPurchaseTime('')
     setContractDate(todayIso())
     setDeliveryDate(todayIso())
     setDeliveryTime('')
@@ -384,6 +392,17 @@ export function ContractFormDialog({
         // formulário.
         setDeliveryDate(data.signal?.deadline_date || data.delivery.date || '')
         setDeliveryTime(data.signal?.deadline_time || data.delivery.time || '')
+        // Devolução guarda pagamento, valor e datas no bloco `returnInfo`; a
+        // forma de pagamento e o valor reaproveitam summary/totalValue, e o
+        // dia/hora da devolução reaproveitam os campos de entrega.
+        if (data.returnInfo) {
+          setSummary(data.returnInfo.payment_method)
+          setTotalValue(data.returnInfo.return_value ? String(data.returnInfo.return_value) : '')
+          setDeliveryDate(data.returnInfo.return_date || '')
+          setDeliveryTime(data.returnInfo.return_time || '')
+          setPurchaseDate(data.returnInfo.purchase_date || '')
+          setPurchaseTime(data.returnInfo.purchase_time || '')
+        }
         setStoreAddress(data.store.address)
         setStoreCity(data.store.city)
         setSellerName(data.store.seller_name)
@@ -485,7 +504,9 @@ export function ContractFormDialog({
     totalValue.trim() !== '' ||
     observations.trim() !== '' ||
     signalValue.trim() !== '' ||
-    saleValue.trim() !== ''
+    saleValue.trim() !== '' ||
+    purchaseDate.trim() !== '' ||
+    purchaseTime.trim() !== ''
 
   /**
    * Intercepta todas as formas de fechar (X, clique fora e Esc) — o Radix
@@ -582,6 +603,18 @@ export function ContractFormDialog({
           deadline_time: deliveryTime,
         }
       : undefined,
+    // Na devolução, forma de pagamento/valor vêm de summary/totalValue e o
+    // dia/hora da devolução, dos campos de entrega.
+    returnInfo: roles.isReturn
+      ? {
+          purchase_date: purchaseDate,
+          purchase_time: purchaseTime,
+          return_date: deliveryDate,
+          return_time: deliveryTime,
+          payment_method: summary,
+          return_value: Number(totalValue) || 0,
+        }
+      : undefined,
     store: { address: storeAddress, city: storeCity, seller_name: sellerName },
   })
 
@@ -635,6 +668,15 @@ export function ContractFormDialog({
     } else if (isConsignment) {
       if (!(Number(totalValue) > 0)) {
         toast.error('Informe o valor acertado com o consignante')
+        return
+      }
+    } else if (roles.isReturn) {
+      if (!(Number(totalValue) > 0)) {
+        toast.error('Informe o valor da devolução')
+        return
+      }
+      if (!deliveryDate) {
+        toast.error('Informe a data da devolução')
         return
       }
     } else if (!summary.trim()) {
@@ -842,9 +884,11 @@ export function ContractFormDialog({
               title={
                 isConsignment
                   ? 'Veículos em consignação'
-                  : isPurchase
-                    ? 'Veículos comprados'
-                    : 'Veículos vendidos'
+                  : roles.isReturn
+                    ? 'Veículo devolvido'
+                    : isPurchase
+                      ? 'Veículos comprados'
+                      : 'Veículos vendidos'
               }
               action={
                 <Button
@@ -1117,6 +1161,24 @@ export function ContractFormDialog({
                   required
                   hint="Valor combinado a repassar ao consignante. O que a loja vender acima disso fica como remuneração pela venda."
                 />
+              ) : roles.isReturn ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Forma de pagamento da devolução"
+                    value={summary}
+                    onChange={setSummary}
+                    placeholder="PIX / DINHEIRO / TRANSFERÊNCIA"
+                  />
+                  <Field
+                    label="Valor da devolução (R$)"
+                    value={totalValue}
+                    onChange={setTotalValue}
+                    placeholder="VALOR A RESTITUIR AO COMPRADOR"
+                    type="number"
+                    required
+                    hint="Valor líquido restituído ao comprador. Descontos por débitos, avarias ou custos podem ser detalhados nas observações."
+                  />
+                </div>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field
@@ -1146,14 +1208,16 @@ export function ContractFormDialog({
                     ? 'Detalhes adicionais sobre o sinal, se necessário...'
                     : isConsignment
                       ? 'Condições combinadas, prazo da consignação, forma de repasse ao consignante...'
-                      : '**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO...'
+                      : roles.isReturn
+                        ? 'Descontos aplicados, débitos do período, avarias, motivo da devolução...'
+                        : '**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO...'
                 }
                 hint={
                   roles.isSignal
                     ? undefined
                     : 'Aparece no contrato como OBS, logo abaixo do valor. Detalhe entradas, parcelas, descontos e prazos.'
                 }
-                rows={roles.isSignal || isConsignment ? 3 : 5}
+                rows={roles.isSignal || isConsignment || roles.isReturn ? 3 : 5}
               />
             </Section>
 
@@ -1161,7 +1225,47 @@ export function ContractFormDialog({
                 concretizar a compra ("Finalização da Negociação"), sem caixa de
                 garantia: o sinal não promete cobertura nenhuma de motor/câmbio.
                 A consignação não tem entrega, então a seção é omitida. */}
-            {!isConsignment && (
+            {roles.isReturn ? (
+            <Section icon={FileText} title="Datas da compra e da devolução">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field
+                  label="Data da compra"
+                  value={purchaseDate}
+                  onChange={setPurchaseDate}
+                  type="date"
+                  hint="Dia em que o cliente comprou o veículo."
+                />
+                <Field
+                  label="Horário da compra"
+                  value={purchaseTime}
+                  onChange={setPurchaseTime}
+                  type="time"
+                />
+                <Field
+                  label="Data da devolução"
+                  value={deliveryDate}
+                  onChange={setDeliveryDate}
+                  type="date"
+                  required
+                />
+                <Field
+                  label="Horário da devolução"
+                  value={deliveryTime}
+                  onChange={setDeliveryTime}
+                  type="time"
+                />
+              </div>
+              <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">
+                  Cláusulas de proteção já incluídas: compra presencial (sem direito de
+                  arrependimento), devolução por liberalidade da loja, veículo recebido no estado em
+                  que está, exigência de veículo quitado com juros do financiamento por conta do
+                  comprador e quitação plena e irrevogável.
+                </p>
+              </div>
+            </Section>
+            ) : !isConsignment ? (
             <Section icon={FileText} title={roles.isSignal ? 'Finalização da Negociação' : 'Entrega'}>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
@@ -1199,7 +1303,7 @@ export function ContractFormDialog({
                   </div>
                 ))}
             </Section>
-            )}
+            ) : null}
 
             {/* Dados do contrato e da loja */}
             <Section icon={FileSignature} title="Loja e assinatura">

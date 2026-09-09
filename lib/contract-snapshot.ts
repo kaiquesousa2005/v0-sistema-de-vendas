@@ -54,8 +54,22 @@ const ownerSchema = z.object({
   document: z.string().trim().default(''),
 })
 
+/**
+ * Bloco exclusivo do contrato de devolução: data/hora da compra original e da
+ * devolução, forma de pagamento (restituição) e valor a restituir ao comprador.
+ * Tudo default/opcional para a prévia rodar com o formulário pela metade.
+ */
+const returnSchema = z.object({
+  purchase_date: z.string().trim().default(''),
+  purchase_time: z.string().trim().default(''),
+  return_date: z.string().trim().default(''),
+  return_time: z.string().trim().default(''),
+  payment_method: z.string().trim().default(''),
+  return_value: z.coerce.number().nonnegative().default(0),
+})
+
 const baseFields = {
-  type: z.enum(['venda', 'compra', 'repasse', 'sinal', 'consignacao']).default('venda'),
+  type: z.enum(['venda', 'compra', 'repasse', 'sinal', 'consignacao', 'devolucao']).default('venda'),
   customer_id: z.coerce.number().int().positive(),
   owner: ownerSchema.default({}),
   vehicles: z.array(soldVehicleSchema),
@@ -82,6 +96,8 @@ const baseFields = {
   }),
 
   signal: signalSchema.default({}),
+
+  returnInfo: returnSchema.default({}),
 
   store: z.object({
     address: z.string().trim().default(''),
@@ -150,6 +166,23 @@ export const saleSchema = z
           code: z.ZodIssueCode.custom,
           path: ['negotiation', 'total_value'],
           message: 'Informe o valor acertado com o consignante',
+        })
+      }
+    } else if (value.type === 'devolucao') {
+      // A devolução precisa do valor a restituir e da data em que o veículo
+      // voltou para a loja.
+      if (!(value.returnInfo.return_value > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['returnInfo', 'return_value'],
+          message: 'Informe o valor da devolução',
+        })
+      }
+      if (!value.returnInfo.return_date) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['returnInfo', 'return_date'],
+          message: 'Informe a data da devolução',
         })
       }
     } else if (!value.negotiation.summary.trim()) {
@@ -327,6 +360,19 @@ export async function buildSaleSnapshot(
             sale_value: Number(data.signal?.sale_value) || 0,
             deadline_date: data.signal?.deadline_date ?? '',
             deadline_time: data.signal?.deadline_time ?? '',
+          },
+        }
+      : {}),
+    // Só grava o bloco de devolução para contratos de devolução.
+    ...(data.type === 'devolucao'
+      ? {
+          returnInfo: {
+            purchase_date: data.returnInfo?.purchase_date ?? '',
+            purchase_time: data.returnInfo?.purchase_time ?? '',
+            return_date: data.returnInfo?.return_date ?? '',
+            return_time: data.returnInfo?.return_time ?? '',
+            payment_method: (data.returnInfo?.payment_method ?? '').toUpperCase(),
+            return_value: Number(data.returnInfo?.return_value) || 0,
           },
         }
       : {}),
