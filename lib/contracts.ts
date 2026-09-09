@@ -35,9 +35,9 @@ export const CONTRACT_TYPES = {
     label: 'Contrato de Consignação',
     short: 'Consignação',
     prefix: 'CSG',
-    title: 'CONTRATO DE CONSIGNAÇÃO DE VEICULO',
-    description: 'Veículo deixado na loja para venda em consignação.',
-    available: false,
+    title: 'CONTRATO DE CONSIGNAÇÃO E TERMO DE RESPONSABILIDADE',
+    description: 'Veículo deixado na loja para venda em consignação, com valor acertado a repassar.',
+    available: true,
   },
   sinal: {
     label: 'Contrato de Sinal de Compra',
@@ -73,11 +73,15 @@ export const AVAILABLE_CONTRACT_TYPES = CONTRACT_TYPE_KEYS.filter((k) => CONTRAC
  */
 export function contractRoles(type: ContractType) {
   const storeIsBuyer = type === 'compra'
+  const isConsignment = type === 'consignacao'
   return {
-    /** Papel do cliente no contrato. */
-    customer: storeIsBuyer ? 'VENDEDOR' : 'COMPRADOR',
+    /**
+     * Papel do cliente no contrato. Na consignação o cliente é o CONSIGNANTE
+     * (quem deixa o veículo); na compra é o VENDEDOR; nos demais, COMPRADOR.
+     */
+    customer: isConsignment ? 'CONSIGNANTE' : storeIsBuyer ? 'VENDEDOR' : 'COMPRADOR',
     /** Papel da loja no contrato. */
-    store: storeIsBuyer ? 'COMPRADOR' : 'VENDEDOR',
+    store: isConsignment ? 'CONSIGNATÁRIA' : storeIsBuyer ? 'COMPRADOR' : 'VENDEDOR',
     storeIsBuyer,
     /**
      * O sinal é um recibo curto (cliente reserva o veículo pagando uma entrada
@@ -86,6 +90,12 @@ export function contractRoles(type: ContractType) {
      * enxuto em vez de tentar renderizar as seções da venda.
      */
     isSignal: type === 'sinal',
+    /**
+     * A consignação tem layout próprio: consignante, proprietário opcional do
+     * veículo, valor acertado a repassar e cláusulas que dão à loja liberdade
+     * para vender. Não tem troca, garantia nem entrega.
+     */
+    isConsignment,
     /**
      * Só a venda tem garantia de motor e câmbio. No repasse o carro sai abaixo
      * do valor de mercado justamente por não ter garantia, e na compra quem
@@ -147,6 +157,15 @@ export interface SaleContractData {
    * `contractRoles(type)` para saber o rótulo correto em cada caso.
    */
   buyer: ContractParty
+  /**
+   * Proprietário do veículo na consignação, quando o carro está em nome de
+   * terceiro ou de empresa (não do consignante). Fica vazio nos demais casos —
+   * o documento só imprime o bloco quando há nome ou documento preenchido.
+   */
+  owner: {
+    name: string
+    document: string
+  }
   /** Veículos objeto do contrato: vendidos ao cliente ou comprados dele. */
   vehicles: ContractVehicle[]
   /** Veículos recebidos como parte do pagamento (troca). */
@@ -217,6 +236,7 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
   }
 
   const buyer = (d.buyer ?? {}) as Record<string, unknown>
+  const owner = (d.owner ?? {}) as Record<string, unknown>
   const negotiation = (d.negotiation ?? {}) as Record<string, unknown>
   const delivery = (d.delivery ?? {}) as Record<string, unknown>
   const store = (d.store ?? {}) as Record<string, unknown>
@@ -230,6 +250,10 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
       phone: str(buyer.phone),
       birth_date: toIsoDate(buyer.birth_date as string | Date | null),
       address: str(buyer.address),
+    },
+    owner: {
+      name: str(owner.name),
+      document: str(owner.document),
     },
     vehicles,
     trade_ins: tradeIns,
@@ -334,12 +358,28 @@ export function missingContractFields(data: unknown, type: ContractType = 'venda
   const missing: string[] = []
 
   // Rótulos seguem o papel de cada parte: numa compra o que falta é o
-  // "Vendedor" (o cliente) e quem assina pela loja é o "Comprador".
-  if (!d.buyer.name) missing.push(roles.storeIsBuyer ? 'Vendedor' : 'Comprador')
+  // "Vendedor" (o cliente); na consignação, o "Consignante".
+  const partyLabel = roles.isConsignment ? 'Consignante' : roles.storeIsBuyer ? 'Vendedor' : 'Comprador'
+  const signerLabel = roles.isConsignment ? 'Responsável' : roles.storeIsBuyer ? 'Comprador' : 'Vendedor'
+
+  if (!d.buyer.name) missing.push(partyLabel)
   if (d.vehicles.length === 0) missing.push('Veículo')
-  if (!d.negotiation.summary) missing.push('Forma de negociação')
-  if (!d.negotiation.total_value) missing.push('Valor')
-  if (!d.store.seller_name) missing.push(roles.storeIsBuyer ? 'Comprador' : 'Vendedor')
+
+  // Cada tipo tem seu próprio conjunto de campos essenciais: o sinal cobra os
+  // valores e o prazo; a consignação, o valor acertado; os demais, a forma de
+  // negociação e o valor.
+  if (roles.isSignal) {
+    if (!d.signal?.signal_value) missing.push('Valor do sinal')
+    if (!d.signal?.sale_value) missing.push('Valor do veículo')
+    if (!d.signal?.deadline_date) missing.push('Finalização')
+  } else if (roles.isConsignment) {
+    if (!d.negotiation.total_value) missing.push('Valor acertado')
+  } else {
+    if (!d.negotiation.summary) missing.push('Forma de negociação')
+    if (!d.negotiation.total_value) missing.push('Valor')
+  }
+
+  if (!d.store.seller_name) missing.push(signerLabel)
 
   return missing
 }

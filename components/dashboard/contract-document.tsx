@@ -251,6 +251,65 @@ function transferClauses(): React.ReactNode[] {
   ]
 }
 
+/**
+ * Cláusulas do contrato de consignação, reescritas para dar à loja
+ * (CONSIGNATÁRIA) o máximo de liberdade na venda: negociar preço/prazo/forma de
+ * pagamento livremente, conceder descontos, expor e anunciar o veículo, ficar
+ * com o ágio acima do valor acertado e transferir direto ao comprador final.
+ * As responsabilidades por multas, IPVA e débitos permanecem com o consignante.
+ */
+function consignmentClauses(storeName: string): React.ReactNode[] {
+  return [
+    <>
+      O CONSIGNANTE AUTORIZA, EM CARÁTER IRREVOGÁVEL DURANTE A VIGÊNCIA DESTE INSTRUMENTO, A
+      CONSIGNATÁRIA {storeName} A PROMOVER A VENDA DO VEÍCULO OBJETO DESTE CONTRATO, PODENDO
+      NEGOCIAR LIVREMENTE PREÇO, PRAZO E FORMA DE PAGAMENTO COM O COMPRADOR FINAL, INCLUSIVE
+      CONCEDER DESCONTOS E ACEITAR VEÍCULO COMO PARTE DO PAGAMENTO, DESDE QUE RESGUARDADO O VALOR
+      LÍQUIDO ACERTADO A SER REPASSADO AO CONSIGNANTE.
+    </>,
+    <>
+      O CONSIGNANTE DECLARA, SOB AS PENAS DA LEI, SER O LEGÍTIMO PROPRIETÁRIO OU ESTAR DEVIDAMENTE
+      AUTORIZADO PELO PROPRIETÁRIO A CONSIGNAR O VEÍCULO, RESPONDENDO CIVIL E CRIMINALMENTE PELA
+      VERACIDADE DESTA DECLARAÇÃO E PELA ORIGEM E REGULARIDADE DO BEM.
+    </>,
+    <>
+      O CONSIGNANTE RESPONSABILIZA-SE POR TODAS AS MULTAS, SEJAM FEDERAIS, ESTADUAIS OU MUNICIPAIS,
+      IPVA, LICENCIAMENTO E DEMAIS DÉBITOS QUE CONSTEM SOBRE O VEÍCULO ATÉ A DATA DA VENDA, FICANDO
+      A CONSIGNATÁRIA DESDE JÁ AUTORIZADA A DESCONTAR TAIS VALORES DO MONTANTE A SER REPASSADO.
+    </>,
+    <>
+      MULTAS OU DÉBITOS LANÇADOS APÓS A VENDA, MAS REFERENTES A PERÍODO ANTERIOR A ELA, PERMANECEM
+      DE RESPONSABILIDADE DO CONSIGNANTE, QUE DEVERÁ QUITÁ-LOS E PROMOVER A TRANSFERÊNCIA DE
+      PONTUAÇÃO JUNTO AOS ÓRGÃOS COMPETENTES, PODENDO RESPONDER JUDICIALMENTE EM CASO DE
+      INADIMPLÊNCIA.
+    </>,
+    <>
+      O VEÍCULO PERMANECERÁ SOB GUARDA E RESPONSABILIDADE DA CONSIGNATÁRIA ATÉ A VENDA OU SUA
+      DEVOLUÇÃO, FICANDO ESTA AUTORIZADA A EXPOR, ANUNCIAR E DIVULGAR O VEÍCULO EM QUALQUER MEIO OU
+      LOCAL, BEM COMO A REALIZAR DEMONSTRAÇÕES E TEST-DRIVE SUPERVISIONADO COM POSSÍVEIS COMPRADORES.
+    </>,
+    <>
+      DURANTE A VIGÊNCIA DESTE CONTRATO O CONSIGNANTE NÃO PODERÁ VENDER O VEÍCULO POR CONTA PRÓPRIA
+      NEM RETIRÁ-LO SEM AVISO PRÉVIO DE 5 (CINCO) DIAS; CASO O RETIRE ANTES DA VENDA, ARCARÁ COM AS
+      DESPESAS COMPROVADAMENTE REALIZADAS PELA CONSIGNATÁRIA COM PREPARAÇÃO, ANÚNCIOS E DIVULGAÇÃO.
+    </>,
+    <>
+      QUALQUER VALOR OBTIDO NA VENDA ACIMA DO VALOR LÍQUIDO ACERTADO COM O CONSIGNANTE CABERÁ
+      INTEGRALMENTE À CONSIGNATÁRIA, A TÍTULO DE REMUNERAÇÃO PELA INTERMEDIAÇÃO E PELOS SERVIÇOS
+      PRESTADOS, NADA MAIS PODENDO SER RECLAMADO PELO CONSIGNANTE A ESSE TÍTULO.
+    </>,
+    <>
+      A CONSIGNATÁRIA FICA AUTORIZADA A RECEBER DO COMPRADOR FINAL O PAGAMENTO DO VEÍCULO E A
+      PROMOVER A DOCUMENTAÇÃO E A TRANSFERÊNCIA DIRETAMENTE PARA O COMPRADOR OU PARA QUEM ESTE
+      INDICAR, INDEPENDENTEMENTE DE NOVA ANUÊNCIA DO CONSIGNANTE.
+    </>,
+    <>
+      O(A) CONSIGNANTE RECONHECE QUE O PRESENTE INSTRUMENTO É FIRMADO NOS TERMOS DO ARTIGO 585, II,
+      DO CÓDIGO DE PROCESSO CIVIL, CONSTITUINDO TÍTULO EXECUTIVO EXTRAJUDICIAL.
+    </>,
+  ]
+}
+
 /** Letras das cláusulas: A), B), C)… conforme a posição na lista. */
 function clauseLetter(index: number) {
   return String.fromCharCode(65 + index)
@@ -333,6 +392,90 @@ function SignalBody({
 }
 
 /**
+ * Corpo do contrato de consignação. Reaproveita as grades da venda — dados do
+ * consignante e dos veículos — e inclui um bloco opcional do proprietário
+ * (quando o veículo está em nome de terceiro/empresa), o valor líquido acertado
+ * a repassar e as cláusulas que dão liberdade de venda à loja.
+ */
+function ConsignmentBody({
+  buyer,
+  owner,
+  vehicles,
+  negotiation,
+  storeName,
+}: {
+  buyer: ReturnType<typeof normalizeSaleData>['buyer']
+  owner: ReturnType<typeof normalizeSaleData>['owner']
+  vehicles: ContractVehicle[]
+  negotiation: ReturnType<typeof normalizeSaleData>['negotiation']
+  storeName: string
+}) {
+  const isPlural = vehicles.length > 1
+  const hasOwner = Boolean(owner.name.trim() || owner.document.trim())
+  const clauses = consignmentClauses(storeName)
+
+  return (
+    <>
+      {/* Consignante — mesma grade de 4 colunas da venda. */}
+      <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+        <FieldGrid>
+          <Field span={2} label="CONSIGNANTE" value={buyer.name} />
+          <Field label="CPF" value={formatCpf(buyer.cpf)} />
+          <Field label="TEL" value={formatPhone(buyer.phone)} />
+          <Field label="RG" value={buyer.rg} />
+          <Field span={2} label="ENDERECO" value={buyer.address} />
+          <Field label="NASCIMENTO" value={longDatePt(buyer.birth_date)} />
+        </FieldGrid>
+      </section>
+
+      {/* Proprietário do veículo: só aparece quando o carro está em nome de
+          terceiro ou empresa. */}
+      {hasOwner && (
+        <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+          <FieldGrid>
+            <Field span={3} label="VEICULO EM NOME DE" value={owner.name} />
+            <Field label="CPF/CNPJ" value={owner.document} />
+          </FieldGrid>
+        </section>
+      )}
+
+      {/* Veículos objeto da consignação — o mesmo bloco usado na venda. */}
+      <h2 className="font-bold">
+        {isPlural ? 'OBJETO — VEICULOS EM CONSIGNAÇÃO' : 'OBJETO — VEICULO EM CONSIGNAÇÃO'}
+      </h2>
+      <section className="mb-1.5 space-y-1">
+        {vehicles.map((vehicle, i) => (
+          <VehicleBlock key={i} vehicle={vehicle} index={i} total={vehicles.length} />
+        ))}
+      </section>
+
+      {/* Valor líquido acertado a repassar ao consignante. */}
+      <section className="mb-1.5 border border-black/25 px-1.5 py-1">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-bold">VALOR ACERTADO A REPASSAR AO CONSIGNANTE:</span>
+          <span className="font-bold tabular-nums">{formatCurrency(negotiation.total_value)}</span>
+        </div>
+        {negotiation.observations && (
+          <p className="whitespace-pre-wrap">
+            <strong>OBS:</strong> {negotiation.observations}
+          </p>
+        )}
+      </section>
+
+      {/* Cláusulas de consignação e responsabilidade. */}
+      <h2 className="font-bold">FICA COMBINADO ENTRE AS PARTES:</h2>
+      <ol className="mb-2 space-y-0.5 text-justify text-[8px] leading-[1.3]">
+        {clauses.map((clause, i) => (
+          <li key={i}>
+            {clauseLetter(i)}) {clause}
+          </li>
+        ))}
+      </ol>
+    </>
+  )
+}
+
+/**
  * Fac-símile do contrato em papel: preto sobre branco em qualquer tema,
  * proporções A4 e quebras de página controladas para impressão/PDF.
  *
@@ -340,7 +483,7 @@ function SignalBody({
  * que roda com o formulário ainda pela metade.
  */
 export function ContractDocument({ title, data, contractDate, type }: ContractDocumentProps) {
-  const { buyer, vehicles, trade_ins, negotiation, delivery, signal, store } =
+  const { buyer, owner, vehicles, trade_ins, negotiation, delivery, signal, store } =
     normalizeSaleData(data)
   const storeName = store.name || 'A LOJA'
   const roles = contractRoles(type)
@@ -383,6 +526,14 @@ className="mb-1.5 block w-[50%] mx-auto"
           buyer={buyer}
           vehicle={soldList[0]}
           signal={signal ?? { signal_value: 0, sale_value: 0, deadline_date: '', deadline_time: '' }}
+        />
+      ) : roles.isConsignment ? (
+        <ConsignmentBody
+          buyer={buyer}
+          owner={owner}
+          vehicles={soldList}
+          negotiation={negotiation}
+          storeName={storeName}
         />
       ) : (
         <>

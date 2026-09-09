@@ -230,13 +230,25 @@ export function ContractFormDialog({
    */
   const roles = contractRoles(type)
   const isPurchase = roles.storeIsBuyer
-  const customerLabel = isPurchase ? 'Vendedor' : 'Comprador'
-  const storeSignerLabel = isPurchase ? 'Nome do comprador' : 'Nome do vendedor'
+  const isConsignment = roles.isConsignment
+  const customerLabel = isConsignment ? 'Consignante' : isPurchase ? 'Vendedor' : 'Comprador'
+  const storeSignerLabel = isConsignment
+    ? 'Nome do responsável pela loja'
+    : isPurchase
+      ? 'Nome do comprador'
+      : 'Nome do vendedor'
 
   const [customer, setCustomer] = useState<PickerItem | null>(null)
   const [sold, setSold] = useState<SoldRow[]>([newSoldRow()])
   const [trades, setTrades] = useState<TradeRow[]>([])
   const vehicleCache = useRef<Map<number, RawVehicle>>(new Map())
+
+  // Proprietário do veículo na consignação (quando está em nome de terceiro ou
+  // empresa). `hasOwner` controla a exibição dos campos; sem ele, o veículo é
+  // assumido como estando no nome do próprio consignante.
+  const [hasOwner, setHasOwner] = useState(false)
+  const [ownerName, setOwnerName] = useState('')
+  const [ownerDocument, setOwnerDocument] = useState('')
 
   const [summary, setSummary] = useState('')
   const [totalValue, setTotalValue] = useState('')
@@ -267,6 +279,9 @@ export function ContractFormDialog({
     setCustomer(null)
     setSold([newSoldRow()])
     setTrades([])
+    setHasOwner(false)
+    setOwnerName('')
+    setOwnerDocument('')
     setSummary('')
     setTotalValue('')
     setObservations('')
@@ -351,6 +366,12 @@ export function ContractFormDialog({
             km: v.km,
           })),
         )
+
+        // Proprietário só vem preenchido em consignações com veículo de
+        // terceiro; se houver qualquer dado, reabre a seção.
+        setOwnerName(data.owner.name)
+        setOwnerDocument(data.owner.document)
+        setHasOwner(Boolean(data.owner.name.trim() || data.owner.document.trim()))
 
         setSummary(data.negotiation.summary)
         setTotalValue(data.negotiation.total_value ? String(data.negotiation.total_value) : '')
@@ -458,6 +479,8 @@ export function ContractFormDialog({
     customer != null ||
     sold.some((row) => row.item) ||
     trades.length > 0 ||
+    ownerName.trim() !== '' ||
+    ownerDocument.trim() !== '' ||
     summary.trim() !== '' ||
     totalValue.trim() !== '' ||
     observations.trim() !== '' ||
@@ -525,6 +548,12 @@ export function ContractFormDialog({
   const buildPayload = () => ({
     type,
     customer_id: customer?.id ?? null,
+    // Proprietário só é enviado na consignação com a seção aberta; nos demais
+    // tipos vai vazio para não sujar o snapshot.
+    owner:
+      isConsignment && hasOwner
+        ? { name: ownerName, document: ownerDocument }
+        : { name: '', document: '' },
     vehicles: sold
       .filter((row) => row.item)
       .map((row) => ({
@@ -601,6 +630,11 @@ export function ContractFormDialog({
       }
       if (!deliveryDate) {
         toast.error('Informe a data para finalizar a negociação')
+        return
+      }
+    } else if (isConsignment) {
+      if (!(Number(totalValue) > 0)) {
+        toast.error('Informe o valor acertado com o consignante')
         return
       }
     } else if (!summary.trim()) {
@@ -805,7 +839,13 @@ export function ContractFormDialog({
             {/* Veículos do contrato: vendidos ao cliente ou comprados dele */}
             <Section
               icon={Car}
-              title={isPurchase ? 'Veículos comprados' : 'Veículos vendidos'}
+              title={
+                isConsignment
+                  ? 'Veículos em consignação'
+                  : isPurchase
+                    ? 'Veículos comprados'
+                    : 'Veículos vendidos'
+              }
               action={
                 <Button
                   type="button"
@@ -877,6 +917,65 @@ export function ContractFormDialog({
                 ))}
               </div>
             </Section>
+
+            {/* Proprietário do veículo — só na consignação, quando o carro está
+                em nome de terceiro ou empresa. Fechado por padrão: sem ele, o
+                veículo é assumido como estando no nome do próprio consignante. */}
+            {isConsignment && (
+              <Section
+                icon={User}
+                title="Proprietário do veículo"
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5"
+                    onClick={() => {
+                      if (hasOwner) {
+                        setOwnerName('')
+                        setOwnerDocument('')
+                      }
+                      setHasOwner((v) => !v)
+                    }}
+                  >
+                    {hasOwner ? (
+                      <>
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Remover
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-3.5 w-3.5" />
+                        Adicionar
+                      </>
+                    )}
+                  </Button>
+                }
+              >
+                {hasOwner ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field
+                      label="Nome do proprietário"
+                      value={ownerName}
+                      onChange={setOwnerName}
+                      placeholder="NOME DE QUEM O VEÍCULO ESTÁ REGISTRADO"
+                    />
+                    <Field
+                      label="CPF/CNPJ do proprietário"
+                      value={ownerDocument}
+                      onChange={setOwnerDocument}
+                      placeholder="CPF OU CNPJ"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Preencha apenas se o veículo estiver em nome de outra pessoa ou de uma empresa,
+                    diferente do consignante.
+                  </p>
+                )}
+              </Section>
+            )}
 
             {/* Veículos recebidos na troca — não existe na compra, onde a loja é
                 quem paga; deixar a seção aqui permitiria digitar dados que o
@@ -1008,6 +1107,16 @@ export function ContractFormDialog({
                     required
                   />
                 </div>
+              ) : isConsignment ? (
+                <Field
+                  label="Valor acertado com o consignante (R$)"
+                  value={totalValue}
+                  onChange={setTotalValue}
+                  placeholder="VALOR LÍQUIDO A REPASSAR AO CONSIGNANTE"
+                  type="number"
+                  required
+                  hint="Valor combinado a repassar ao consignante. O que a loja vender acima disso fica como remuneração pela venda."
+                />
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field
@@ -1035,20 +1144,24 @@ export function ContractFormDialog({
                 placeholder={
                   roles.isSignal
                     ? 'Detalhes adicionais sobre o sinal, se necessário...'
-                    : '**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO...'
+                    : isConsignment
+                      ? 'Condições combinadas, prazo da consignação, forma de repasse ao consignante...'
+                      : '**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO...'
                 }
                 hint={
                   roles.isSignal
                     ? undefined
                     : 'Aparece no contrato como OBS, logo abaixo do valor. Detalhe entradas, parcelas, descontos e prazos.'
                 }
-                rows={roles.isSignal ? 3 : 5}
+                rows={roles.isSignal || isConsignment ? 3 : 5}
               />
             </Section>
 
             {/* Entrega — no sinal essa seção passa a ser o prazo para o cliente
                 concretizar a compra ("Finalização da Negociação"), sem caixa de
-                garantia: o sinal não promete cobertura nenhuma de motor/câmbio. */}
+                garantia: o sinal não promete cobertura nenhuma de motor/câmbio.
+                A consignação não tem entrega, então a seção é omitida. */}
+            {!isConsignment && (
             <Section icon={FileText} title={roles.isSignal ? 'Finalização da Negociação' : 'Entrega'}>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
@@ -1086,6 +1199,7 @@ export function ContractFormDialog({
                   </div>
                 ))}
             </Section>
+            )}
 
             {/* Dados do contrato e da loja */}
             <Section icon={FileSignature} title="Loja e assinatura">

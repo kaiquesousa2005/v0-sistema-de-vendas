@@ -44,9 +44,20 @@ const signalSchema = z.object({
   deadline_time: z.string().trim().default(''),
 })
 
+/**
+ * Proprietário do veículo na consignação. Preenchido só quando o carro está em
+ * nome de terceiro ou empresa; ambos os campos são opcionais/default para não
+ * travar a prévia nem os demais tipos de contrato, que ignoram este bloco.
+ */
+const ownerSchema = z.object({
+  name: z.string().trim().default(''),
+  document: z.string().trim().default(''),
+})
+
 const baseFields = {
-  type: z.enum(['venda', 'compra', 'repasse', 'sinal']).default('venda'),
+  type: z.enum(['venda', 'compra', 'repasse', 'sinal', 'consignacao']).default('venda'),
   customer_id: z.coerce.number().int().positive(),
+  owner: ownerSchema.default({}),
   vehicles: z.array(soldVehicleSchema),
   /**
    * Veículos do contrato digitados à mão, sem passar pelo estoque.
@@ -129,6 +140,16 @@ export const saleSchema = z
           code: z.ZodIssueCode.custom,
           path: ['signal', 'deadline_date'],
           message: 'Informe a data para finalizar a negociação',
+        })
+      }
+    } else if (value.type === 'consignacao') {
+      // A consignação não tem "forma de negociação": o que precisa estar
+      // acertado é o valor líquido a ser repassado ao consignante.
+      if (!(value.negotiation.total_value > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['negotiation', 'total_value'],
+          message: 'Informe o valor acertado com o consignante',
         })
       }
     } else if (!value.negotiation.summary.trim()) {
@@ -280,6 +301,12 @@ export async function buildSaleSnapshot(
           address: buildCustomerAddress(customer),
         }
       : { ...EMPTY_PARTY },
+    // Proprietário do veículo (consignação em nome de terceiro/empresa). Vem
+    // digitado à mão; fica vazio para os demais tipos.
+    owner: {
+      name: (data.owner?.name ?? '').toUpperCase(),
+      document: data.owner?.document ?? '',
+    },
     vehicles: allVehicles,
     trade_ins: tradeIns,
     negotiation: {
