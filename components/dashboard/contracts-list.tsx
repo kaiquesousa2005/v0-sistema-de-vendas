@@ -35,8 +35,11 @@ import {
   FileText,
   Loader2,
   Pencil,
+  RotateCcw,
   Search,
   Trash2,
+  TrendingUp,
+  Wallet,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -57,12 +60,27 @@ interface ContractRow {
   contract_date: string
 }
 
+interface MonthRevenue {
+  gross: number
+  returns: number
+  net: number
+  salesCount: number
+  returnsCount: number
+}
+
 const LIMIT = 12
+
+/** Rótulo do mês atual, ex.: "janeiro de 2026". */
+function currentMonthLabel() {
+  const label = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
 
 export function ContractsList() {
   const router = useRouter()
 
   const [contracts, setContracts] = useState<ContractRow[]>([])
+  const [monthRevenue, setMonthRevenue] = useState<MonthRevenue | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -89,6 +107,7 @@ export function ContractsList() {
 
       const data = await response.json()
       setContracts(data.contracts ?? [])
+      setMonthRevenue(data.monthRevenue ?? null)
       setTotal(data.total ?? 0)
       setTotalPages(data.totalPages ?? 1)
     } catch (error) {
@@ -147,6 +166,54 @@ export function ContractsList() {
           Criar contrato
         </Button>
       </div>
+
+      {/* Faturamento do mês: vendas + repasses, descontadas as devoluções */}
+      {monthRevenue && (
+        <Card className="overflow-hidden p-0">
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Wallet className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Faturamento de {currentMonthLabel()}
+                </p>
+                <p className="text-2xl font-bold tabular-nums leading-tight">
+                  {formatCurrency(monthRevenue.net)}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-5 text-sm">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-500" />
+                <div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Vendas e repasses ({monthRevenue.salesCount})
+                  </p>
+                  <p className="font-semibold tabular-nums">
+                    {formatCurrency(monthRevenue.gross)}
+                  </p>
+                </div>
+              </div>
+              {monthRevenue.returns > 0 && (
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4 text-destructive" />
+                  <div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Devoluções ({monthRevenue.returnsCount})
+                    </p>
+                    <p className="font-semibold tabular-nums text-destructive">
+                      -{formatCurrency(monthRevenue.returns)}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Busca e filtros */}
       <div className="space-y-3">

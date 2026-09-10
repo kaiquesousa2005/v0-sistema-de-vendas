@@ -83,6 +83,24 @@ export async function GET(request: NextRequest) {
       LIMIT ${MAX_ROWS}
     `
 
+    // Faturamento do mês atual: soma vendas e repasses e desconta as
+    // devoluções (o valor devolvido ao cliente sai do faturamento). Sempre
+    // baseado no mês corrente, independente da busca e do filtro de tipo.
+    const revenueRows = await sql`
+      SELECT
+        COALESCE(SUM(total_value) FILTER (WHERE type IN ('venda', 'repasse')), 0) AS gross,
+        COALESCE(SUM(total_value) FILTER (WHERE type = 'devolucao'), 0) AS returns,
+        COUNT(*) FILTER (WHERE type IN ('venda', 'repasse')) AS sales_count,
+        COUNT(*) FILTER (WHERE type = 'devolucao') AS returns_count
+      FROM contracts
+      WHERE store_id = ${storeId}
+        AND EXTRACT(YEAR FROM contract_date) = EXTRACT(YEAR FROM CURRENT_DATE)
+        AND EXTRACT(MONTH FROM contract_date) = EXTRACT(MONTH FROM CURRENT_DATE)
+    `
+    const rev = revenueRows[0] ?? {}
+    const gross = Number(rev.gross) || 0
+    const returns = Number(rev.returns) || 0
+
     return NextResponse.json({
       contracts: contracts.map((c) => ({
         ...c,
@@ -90,6 +108,13 @@ export async function GET(request: NextRequest) {
         vehicles: Array.isArray(c.vehicles) ? c.vehicles : [],
       })),
       total: contracts.length,
+      monthRevenue: {
+        gross,
+        returns,
+        net: gross - returns,
+        salesCount: Number(rev.sales_count) || 0,
+        returnsCount: Number(rev.returns_count) || 0,
+      },
     })
   } catch (error) {
     console.error('[v0] GET contracts error:', error)
