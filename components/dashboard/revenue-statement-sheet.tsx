@@ -23,7 +23,6 @@ const COMPANY = {
   estadual: 'Inscrição Estadual: 064.787.494',
   address: 'Av. Américo Barreira, 536 - Demócrito Rocha - Fortaleza/CE - CEP: 60.440-092',
   owner: 'Arlene Freire Sousa',
-  accountant: 'CONTADOR',
 }
 
 /** Número em pt-BR sem "R$", como no demonstrativo em papel (ex.: 965.700,00). */
