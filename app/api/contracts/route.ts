@@ -57,7 +57,18 @@ export async function GET(request: NextRequest) {
     const contracts = await sql`
       SELECT
         id, type, contract_number, customer_id, vehicle_id,
-        customer_name, vehicle_label, total_value, contract_date, created_at
+        customer_name, vehicle_label, total_value, contract_date, created_at,
+        COALESCE(
+          (
+            SELECT jsonb_agg(jsonb_build_object(
+              'brand_model', elem->>'brand_model',
+              'plate', elem->>'plate',
+              'year', elem->>'year'
+            ))
+            FROM jsonb_array_elements(data->'vehicles') AS elem
+          ),
+          '[]'::jsonb
+        ) AS vehicles
       FROM contracts
       WHERE store_id = ${storeId}
         AND (${type} = '' OR type = ${type})
@@ -72,12 +83,38 @@ export async function GET(request: NextRequest) {
       LIMIT ${MAX_ROWS}
     `
 
+    // Faturamento do mês atual: soma vendas e repasses e desconta as
+    // devoluções (o valor devolvido ao cliente sai do faturamento). Sempre
+    // baseado no mês corrente, independente da busca e do filtro de tipo.
+    const revenueRows = await sql`
+      SELECT
+        COALESCE(SUM(total_value) FILTER (WHERE type IN ('venda', 'repasse')), 0) AS gross,
+        COALESCE(SUM(total_value) FILTER (WHERE type = 'devolucao'), 0) AS returns,
+        COUNT(*) FILTER (WHERE type IN ('venda', 'repasse')) AS sales_count,
+        COUNT(*) FILTER (WHERE type = 'devolucao') AS returns_count
+      FROM contracts
+      WHERE store_id = ${storeId}
+        AND EXTRACT(YEAR FROM contract_date) = EXTRACT(YEAR FROM CURRENT_DATE)
+        AND EXTRACT(MONTH FROM contract_date) = EXTRACT(MONTH FROM CURRENT_DATE)
+    `
+    const rev = revenueRows[0] ?? {}
+    const gross = Number(rev.gross) || 0
+    const returns = Number(rev.returns) || 0
+
     return NextResponse.json({
       contracts: contracts.map((c) => ({
         ...c,
         total_value: Number(c.total_value) || 0,
+        vehicles: Array.isArray(c.vehicles) ? c.vehicles : [],
       })),
       total: contracts.length,
+      monthRevenue: {
+        gross,
+        returns,
+        net: gross - returns,
+        salesCount: Number(rev.sales_count) || 0,
+        returnsCount: Number(rev.returns_count) || 0,
+      },
     })
   } catch (error) {
     console.error('[v0] GET contracts error:', error)
@@ -92,8 +129,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    if (body?.type && body.type !== 'venda') {
-      const cfg = CONTRACT_TYPES[body.type as keyof typeof CONTRACT_TYPES]
+    // `available` na lib é a fonte única da verdade: habilitar um tipo novo lá
+    // basta para o backend aceitá-lo.
+    const requestedType = (body?.type ?? 'venda') as keyof typeof CONTRACT_TYPES
+    if (!CONTRACT_TYPES[requestedType]?.available) {
+      const cfg = CONTRACT_TYPES[requestedType]
       return NextResponse.json(
         { error: `${cfg?.label ?? 'Esse tipo de contrato'} ainda não está disponível.` },
         { status: 400 },
@@ -105,6 +145,7 @@ export async function POST(request: NextRequest) {
     // quando ele finalizar o contrato.
     const isDraft = body?.draft === true
     const data = isDraft ? saleDraftSchema.parse(body) : saleSchema.parse(body)
+    const contractType = data.type
     const sql = neon(process.env.DATABASE_URL!)
 
     const { snapshot, customerName, vehicleLabel, vehicleIds } = await buildSaleSnapshot(
@@ -122,7 +163,7 @@ export async function POST(request: NextRequest) {
 
     await rememberStoreDefaults(sql, storeId, snapshot.store)
 
-    const prefix = CONTRACT_TYPES.venda.prefix
+    const prefix = CONTRACT_TYPES[contractType].prefix
 
     // Numeração sequencial por loja/tipo. Em caso de corrida no índice único,
     // tenta novamente com o próximo número.
@@ -133,7 +174,7 @@ export async function POST(request: NextRequest) {
       const seqRows = await sql`
         SELECT COALESCE(MAX(NULLIF(regexp_replace(contract_number, '\\D', '', 'g'), '')::int), 0) AS last
         FROM contracts
-        WHERE store_id = ${storeId} AND type = 'venda'
+        WHERE store_id = ${storeId} AND type = ${contractType}
       `
       const next = Number(seqRows[0]?.last ?? 0) + 1 + attempt
       const contractNumber = `${prefix}-${String(next).padStart(4, '0')}`
@@ -144,7 +185,7 @@ export async function POST(request: NextRequest) {
             store_id, type, contract_number, customer_id, vehicle_id,
             customer_name, vehicle_label, total_value, contract_date, data
           ) VALUES (
-            ${storeId}, 'venda', ${contractNumber}, ${data.customer_id || null}, ${vehicleIds[0] ?? null},
+            ${storeId}, ${contractType}, ${contractNumber}, ${data.customer_id || null}, ${vehicleIds[0] ?? null},
             ${customerName}, ${vehicleLabel}, ${snapshot.negotiation.total_value},
             ${data.contract_date || todayIso()}, ${JSON.stringify(snapshot)}::jsonb
           )

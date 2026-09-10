@@ -20,32 +20,32 @@ export const CONTRACT_TYPES = {
     short: 'Devolução',
     prefix: 'DEV',
     title: 'CONTRATO DE DEVOLUÇÃO DE VEICULO',
-    description: 'Devolução de veículo por parte do comprador.',
-    available: false,
+    description: 'Devolução de veículo pelo comprador, com quitação e restituição de valor.',
+    available: true,
   },
   repasse: {
     label: 'Contrato de Repasse',
     short: 'Repasse',
     prefix: 'REP',
-    title: 'CONTRATO DE REPASSE DE VEICULO',
-    description: 'Repasse do veículo para outra loja ou revendedor.',
-    available: false,
+    title: 'CONTRATO DE REPASSE DE VEICULOS',
+    description: 'Venda de veículo abaixo do mercado, sem nenhuma garantia da loja.',
+    available: true,
   },
   consignacao: {
     label: 'Contrato de Consignação',
     short: 'Consignação',
     prefix: 'CSG',
-    title: 'CONTRATO DE CONSIGNAÇÃO DE VEICULO',
-    description: 'Veículo deixado na loja para venda em consignação.',
-    available: false,
+    title: 'CONTRATO DE CONSIGNAÇÃO',
+    description: 'Veículo deixado na loja para venda em consignação, com valor acertado a repassar.',
+    available: true,
   },
   sinal: {
     label: 'Contrato de Sinal de Compra',
     short: 'Sinal',
     prefix: 'SIN',
     title: 'CONTRATO DE SINAL DE COMPRA DE VEICULO',
-    description: 'Reserva do veículo mediante pagamento de sinal.',
-    available: false,
+    description: 'Reserva do veículo mediante pagamento de sinal, até concretizar a venda.',
+    available: true,
   },
 } as const
 
@@ -61,21 +61,58 @@ export function isContractType(value: string): value is ContractType {
 export const AVAILABLE_CONTRACT_TYPES = CONTRACT_TYPE_KEYS.filter((k) => CONTRACT_TYPES[k].available)
 
 /**
- * Papéis das partes conforme o tipo de contrato.
+ * Papéis das partes e regras de conteúdo conforme o tipo de contrato.
  *
  * Na venda a loja é a VENDEDORA e o cliente é o COMPRADOR. Na compra os papéis
  * se invertem: a loja compra o veículo do cliente, que passa a ser o VENDEDOR.
  * O snapshot guarda o cliente sempre na mesma chave (`buyer`), então é este
  * mapa que decide os rótulos do documento e do formulário.
+ *
+ * Fonte única também das diferenças de conteúdo (garantia, troca, RG), para o
+ * formulário não prometer algo que o documento impresso não traz.
  */
 export function contractRoles(type: ContractType) {
   const storeIsBuyer = type === 'compra'
+  const isConsignment = type === 'consignacao'
   return {
-    /** Papel do cliente no contrato. */
-    customer: storeIsBuyer ? 'VENDEDOR' : 'COMPRADOR',
+    /**
+     * Papel do cliente no contrato. Na consignação o cliente é o CONSIGNANTE
+     * (quem deixa o veículo); na compra é o VENDEDOR; nos demais, COMPRADOR.
+     */
+    customer: isConsignment ? 'CONSIGNANTE' : storeIsBuyer ? 'VENDEDOR' : 'COMPRADOR',
     /** Papel da loja no contrato. */
-    store: storeIsBuyer ? 'COMPRADOR' : 'VENDEDOR',
+    store: isConsignment ? 'CONSIGNATÁRIA' : storeIsBuyer ? 'COMPRADOR' : 'VENDEDOR',
     storeIsBuyer,
+    /**
+     * O sinal é um recibo curto (cliente reserva o veículo pagando uma entrada
+     * até concretizar a venda), sem cláusulas, negociação, troca ou garantia.
+     * Marcá-lo aqui deixa o documento e o formulário trocarem para o layout
+     * enxuto em vez de tentar renderizar as seções da venda.
+     */
+    isSignal: type === 'sinal',
+    /**
+     * A consignação tem layout próprio: consignante, proprietário opcional do
+     * veículo, valor acertado a repassar e cláusulas que dão à loja liberdade
+     * para vender. Não tem troca, garantia nem entrega.
+     */
+    isConsignment,
+    /**
+     * A devolução tem layout próprio: comprador que devolve, veículo devolvido,
+     * datas da compra e da devolução, forma de pagamento e valor a restituir,
+     * além de cláusulas que protegem a loja (compra presencial, devolução por
+     * liberalidade, exigência de veículo quitado). Sem troca nem garantia.
+     */
+    isReturn: type === 'devolucao',
+    /**
+     * Só a venda tem garantia de motor e câmbio. No repasse o carro sai abaixo
+     * do valor de mercado justamente por não ter garantia, e na compra quem
+     * vende é o cliente, que não assume garantia nenhuma.
+     */
+    hasWarranty: type === 'venda',
+    /** Veículo dado como entrada só existe quando a loja é a vendedora. */
+    hasTradeIns: type === 'venda' || type === 'repasse',
+    /** Compra, repasse e devolução imprimem o RG do cliente, como nos recibos em papel. */
+    showsRg: type === 'compra' || type === 'repasse' || type === 'devolucao',
   }
 }
 
@@ -127,6 +164,15 @@ export interface SaleContractData {
    * `contractRoles(type)` para saber o rótulo correto em cada caso.
    */
   buyer: ContractParty
+  /**
+   * Proprietário do veículo na consignação, quando o carro está em nome de
+   * terceiro ou de empresa (não do consignante). Fica vazio nos demais casos —
+   * o documento só imprime o bloco quando há nome ou documento preenchido.
+   */
+  owner: {
+    name: string
+    document: string
+  }
   /** Veículos objeto do contrato: vendidos ao cliente ou comprados dele. */
   vehicles: ContractVehicle[]
   /** Veículos recebidos como parte do pagamento (troca). */
@@ -140,6 +186,30 @@ export interface SaleContractData {
   delivery: {
     date: string
     time: string
+  }
+  /**
+   * Exclusivo do contrato de sinal. Guarda o valor da entrada, o valor pelo
+   * qual a loja está vendendo e o dia combinado para o cliente concretizar a
+   * compra. Opcional porque nenhum outro tipo de contrato usa esse bloco.
+   */
+  signal?: {
+    signal_value: number
+    sale_value: number
+    deadline_date: string
+    deadline_time: string
+  }
+  /**
+   * Exclusivo do contrato de devolução. Guarda a data/hora da compra original e
+   * da devolução, a forma de pagamento (restituição) e o valor a restituir ao
+   * comprador. Opcional porque nenhum outro tipo de contrato usa esse bloco.
+   */
+  returnInfo?: {
+    purchase_date: string
+    purchase_time: string
+    return_date: string
+    return_time: string
+    payment_method: string
+    return_value: number
   }
   store: ContractStore
 }
@@ -186,9 +256,12 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
   }
 
   const buyer = (d.buyer ?? {}) as Record<string, unknown>
+  const owner = (d.owner ?? {}) as Record<string, unknown>
   const negotiation = (d.negotiation ?? {}) as Record<string, unknown>
   const delivery = (d.delivery ?? {}) as Record<string, unknown>
   const store = (d.store ?? {}) as Record<string, unknown>
+  const signal = d.signal ? (d.signal as Record<string, unknown>) : null
+  const returnInfo = d.returnInfo ? (d.returnInfo as Record<string, unknown>) : null
 
   return {
     buyer: {
@@ -199,6 +272,10 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
       birth_date: toIsoDate(buyer.birth_date as string | Date | null),
       address: str(buyer.address),
     },
+    owner: {
+      name: str(owner.name),
+      document: str(owner.document),
+    },
     vehicles,
     trade_ins: tradeIns,
     negotiation: {
@@ -207,6 +284,30 @@ export function normalizeSaleData(raw: unknown): SaleContractData {
       observations: str(negotiation.observations),
     },
     delivery: { date: str(delivery.date), time: str(delivery.time) },
+    // Só materializa o bloco quando o snapshot realmente tem sinal; assim os
+    // demais contratos continuam com `signal` indefinido.
+    ...(signal
+      ? {
+          signal: {
+            signal_value: Number(signal.signal_value) || 0,
+            sale_value: Number(signal.sale_value) || 0,
+            deadline_date: toIsoDate(signal.deadline_date as string | Date | null),
+            deadline_time: str(signal.deadline_time),
+          },
+        }
+      : {}),
+    ...(returnInfo
+      ? {
+          returnInfo: {
+            purchase_date: toIsoDate(returnInfo.purchase_date as string | Date | null),
+            purchase_time: str(returnInfo.purchase_time),
+            return_date: toIsoDate(returnInfo.return_date as string | Date | null),
+            return_time: str(returnInfo.return_time),
+            payment_method: str(returnInfo.payment_method),
+            return_value: Number(returnInfo.return_value) || 0,
+          },
+        }
+      : {}),
     store: {
       name: str(store.name),
       address: str(store.address),
@@ -284,15 +385,37 @@ export function todayIso(): string {
  * snapshot em vez de guardada numa coluna: se depois ele preencher o que
  * faltava pela edição, o aviso desaparece sozinho, sem migração nem backfill.
  */
-export function missingContractFields(data: unknown): string[] {
+export function missingContractFields(data: unknown, type: ContractType = 'venda'): string[] {
   const d = normalizeSaleData(data)
+  const roles = contractRoles(type)
   const missing: string[] = []
 
-  if (!d.buyer.name) missing.push('Comprador')
+  // Rótulos seguem o papel de cada parte: numa compra o que falta é o
+  // "Vendedor" (o cliente); na consignação, o "Consignante".
+  const partyLabel = roles.isConsignment ? 'Consignante' : roles.storeIsBuyer ? 'Vendedor' : 'Comprador'
+  const signerLabel = roles.isConsignment ? 'Responsável' : roles.storeIsBuyer ? 'Comprador' : 'Vendedor'
+
+  if (!d.buyer.name) missing.push(partyLabel)
   if (d.vehicles.length === 0) missing.push('Veículo')
-  if (!d.negotiation.summary) missing.push('Forma de negociação')
-  if (!d.negotiation.total_value) missing.push('Valor')
-  if (!d.store.seller_name) missing.push('Vendedor')
+
+  // Cada tipo tem seu próprio conjunto de campos essenciais: o sinal cobra os
+  // valores e o prazo; a consignação, o valor acertado; os demais, a forma de
+  // negociação e o valor.
+  if (roles.isSignal) {
+    if (!d.signal?.signal_value) missing.push('Valor do sinal')
+    if (!d.signal?.sale_value) missing.push('Valor do veículo')
+    if (!d.signal?.deadline_date) missing.push('Finalização')
+  } else if (roles.isConsignment) {
+    if (!d.negotiation.total_value) missing.push('Valor acertado')
+  } else if (roles.isReturn) {
+    if (!d.returnInfo?.return_value) missing.push('Valor da devolução')
+    if (!d.returnInfo?.return_date) missing.push('Data da devolução')
+  } else {
+    if (!d.negotiation.summary) missing.push('Forma de negociação')
+    if (!d.negotiation.total_value) missing.push('Valor')
+  }
+
+  if (!d.store.seller_name) missing.push(signerLabel)
 
   return missing
 }

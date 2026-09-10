@@ -449,30 +449,30 @@ export function VehiclesList() {
           <span className="text-sm">Carregando veículos...</span>
         </div>
       ) : (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         {vehicles.map((vehicle) => (
-          <Card key={vehicle.id} className="flex flex-col">
-            <CardHeader className="pb-3">
+          <Card key={vehicle.id} className="flex flex-col gap-3 py-4">
+            <CardHeader className="px-4 pb-0">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <CardTitle className="text-base truncate">{vehicle.brand} {vehicle.model}</CardTitle>
-                  <CardDescription className="font-mono">{vehicle.plate}</CardDescription>
+                  <CardTitle className="text-sm truncate">{vehicle.brand} {vehicle.model}</CardTitle>
+                  <CardDescription className="font-mono text-xs">{vehicle.plate}</CardDescription>
                 </div>
-                <Badge variant="outline" className="shrink-0 gap-1">
+                <Badge variant="outline" className="shrink-0 gap-1 text-[10px]">
                   {vehicle.type === 'carro' ? <Car className="w-3 h-3" /> : <Bike className="w-3 h-3" />}
                   {vehicle.type === 'carro' ? 'Carro' : 'Moto'}
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent className="flex-1 space-y-3">
-              <div className="text-sm space-y-1 text-muted-foreground">
+            <CardContent className="flex-1 space-y-2 px-4">
+              <div className="text-xs space-y-0.5 text-muted-foreground">
                 {vehicle.version && <p><span className="font-medium text-foreground">Versão:</span> {vehicle.version}</p>}
                 <p><span className="font-medium text-foreground">Anos:</span> {vehicle.manufacture_year}/{vehicle.model_year}</p>
                 <p><span className="font-medium text-foreground">Compra:</span> R$ {(Number(vehicle.purchase_value) || 0).toFixed(2)}</p>
                 <p><span className="font-medium text-foreground">RENAVAN:</span> {vehicle.renavam}</p>
-                <p><span className="font-medium text-foreground">Chassis:</span> <span className="font-mono text-xs">{vehicle.chassis}</span></p>
+                <p><span className="font-medium text-foreground">Chassis:</span> <span className="font-mono">{vehicle.chassis}</span></p>
               </div>
-              <div className="grid grid-cols-2 gap-2 pt-2">
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 <Button size="sm" variant="outline" onClick={() => handleOpenDialog(vehicle)}>
                   <Edit className="w-3 h-3 mr-1" />
                   Editar

@@ -32,9 +32,46 @@ const soldVehicleSchema = z.object({
   km: z.string().trim().default(''),
 })
 
+/**
+ * Bloco exclusivo do contrato de sinal: valor da entrada, valor total pelo qual
+ * a loja vende e o prazo (dia + hora) combinado para concretizar a compra.
+ * Tudo default/opcional para a prévia rodar com o formulário pela metade.
+ */
+const signalSchema = z.object({
+  signal_value: z.coerce.number().nonnegative().default(0),
+  sale_value: z.coerce.number().nonnegative().default(0),
+  deadline_date: z.string().trim().default(''),
+  deadline_time: z.string().trim().default(''),
+})
+
+/**
+ * Proprietário do veículo na consignação. Preenchido só quando o carro está em
+ * nome de terceiro ou empresa; ambos os campos são opcionais/default para não
+ * travar a prévia nem os demais tipos de contrato, que ignoram este bloco.
+ */
+const ownerSchema = z.object({
+  name: z.string().trim().default(''),
+  document: z.string().trim().default(''),
+})
+
+/**
+ * Bloco exclusivo do contrato de devolução: data/hora da compra original e da
+ * devolução, forma de pagamento (restituição) e valor a restituir ao comprador.
+ * Tudo default/opcional para a prévia rodar com o formulário pela metade.
+ */
+const returnSchema = z.object({
+  purchase_date: z.string().trim().default(''),
+  purchase_time: z.string().trim().default(''),
+  return_date: z.string().trim().default(''),
+  return_time: z.string().trim().default(''),
+  payment_method: z.string().trim().default(''),
+  return_value: z.coerce.number().nonnegative().default(0),
+})
+
 const baseFields = {
-  type: z.enum(['venda', 'compra']).default('venda'),
+  type: z.enum(['venda', 'compra', 'repasse', 'sinal', 'consignacao', 'devolucao']).default('venda'),
   customer_id: z.coerce.number().int().positive(),
+  owner: ownerSchema.default({}),
   vehicles: z.array(soldVehicleSchema),
   /**
    * Veículos do contrato digitados à mão, sem passar pelo estoque.
@@ -58,6 +95,10 @@ const baseFields = {
     time: z.string().trim().default(''),
   }),
 
+  signal: signalSchema.default({}),
+
+  returnInfo: returnSchema.default({}),
+
   store: z.object({
     address: z.string().trim().default(''),
     city: z.string().trim().default(''),
@@ -65,33 +106,90 @@ const baseFields = {
   }),
 }
 
-/** Salvar exige cliente, veículo, negociação e vendedor. */
+/**
+ * Salvar exige cliente, veículo e vendedor. As demais exigências variam por
+ * tipo e são aplicadas no `superRefine`: venda/compra/repasse pedem forma de
+ * negociação; o sinal pede valor do sinal, valor de venda e prazo.
+ */
 export const saleSchema = z
   .object({
     ...baseFields,
     customer_id: z.coerce.number().int().positive('Selecione o cliente'),
     contract_date: z.string().min(10, 'Data do contrato obrigatória'),
-    negotiation: z.object({
-      summary: z.string().trim().min(1, 'Descreva a forma de negociação'),
-      total_value: z.coerce.number().nonnegative('Valor inválido'),
-      observations: z.string().trim().default(''),
-    }),
     store: z.object({
       address: z.string().trim().default(''),
       city: z.string().trim().default(''),
       seller_name: z.string().trim().min(1, 'Informe o nome do vendedor'),
     }),
   })
-  // Checagem cruzada em vez de `vehicles.min(1)`: na compra o veículo pode vir
-  // do estoque OU ser digitado, e exigir a lista do estoque bloquearia o
-  // preenchimento manual.
   .superRefine((value, ctx) => {
+    // Veículo: aceita do estoque OU digitado, então checa a soma em vez de
+    // `vehicles.min(1)`, que bloquearia o preenchimento manual da compra.
     const hasVehicle = value.vehicles.length > 0 || value.manual_vehicles.length > 0
     if (!hasVehicle) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['vehicles'],
         message: 'Informe ao menos um veículo',
+      })
+    }
+
+    if (value.type === 'sinal') {
+      // O sinal é um recibo de reserva: o que importa é o valor da entrada, o
+      // valor total do veículo e o prazo para concretizar.
+      if (!(value.signal.signal_value > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['signal', 'signal_value'],
+          message: 'Informe o valor do sinal',
+        })
+      }
+      if (!(value.signal.sale_value > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['signal', 'sale_value'],
+          message: 'Informe o valor total do veículo',
+        })
+      }
+      if (!value.signal.deadline_date) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['signal', 'deadline_date'],
+          message: 'Informe a data para finalizar a negociação',
+        })
+      }
+    } else if (value.type === 'consignacao') {
+      // A consignação não tem "forma de negociação": o que precisa estar
+      // acertado é o valor líquido a ser repassado ao consignante.
+      if (!(value.negotiation.total_value > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['negotiation', 'total_value'],
+          message: 'Informe o valor acertado com o consignante',
+        })
+      }
+    } else if (value.type === 'devolucao') {
+      // A devolução precisa do valor a restituir e da data em que o veículo
+      // voltou para a loja.
+      if (!(value.returnInfo.return_value > 0)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['returnInfo', 'return_value'],
+          message: 'Informe o valor da devolução',
+        })
+      }
+      if (!value.returnInfo.return_date) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['returnInfo', 'return_date'],
+          message: 'Informe a data da devolução',
+        })
+      }
+    } else if (!value.negotiation.summary.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['negotiation', 'summary'],
+        message: 'Descreva a forma de negociação',
       })
     }
   })
@@ -236,6 +334,12 @@ export async function buildSaleSnapshot(
           address: buildCustomerAddress(customer),
         }
       : { ...EMPTY_PARTY },
+    // Proprietário do veículo (consignação em nome de terceiro/empresa). Vem
+    // digitado à mão; fica vazio para os demais tipos.
+    owner: {
+      name: (data.owner?.name ?? '').toUpperCase(),
+      document: data.owner?.document ?? '',
+    },
     vehicles: allVehicles,
     trade_ins: tradeIns,
     negotiation: {
@@ -247,6 +351,31 @@ export async function buildSaleSnapshot(
       date: data.delivery?.date ?? '',
       time: data.delivery?.time ?? '',
     },
+    // Só grava o bloco de sinal para contratos de sinal, mantendo os demais
+    // snapshots sem a chave `signal`.
+    ...(data.type === 'sinal'
+      ? {
+          signal: {
+            signal_value: Number(data.signal?.signal_value) || 0,
+            sale_value: Number(data.signal?.sale_value) || 0,
+            deadline_date: data.signal?.deadline_date ?? '',
+            deadline_time: data.signal?.deadline_time ?? '',
+          },
+        }
+      : {}),
+    // Só grava o bloco de devolução para contratos de devolução.
+    ...(data.type === 'devolucao'
+      ? {
+          returnInfo: {
+            purchase_date: data.returnInfo?.purchase_date ?? '',
+            purchase_time: data.returnInfo?.purchase_time ?? '',
+            return_date: data.returnInfo?.return_date ?? '',
+            return_time: data.returnInfo?.return_time ?? '',
+            payment_method: (data.returnInfo?.payment_method ?? '').toUpperCase(),
+            return_value: Number(data.returnInfo?.return_value) || 0,
+          },
+        }
+      : {}),
     store: {
       // `trade_name` (nome fantasia) é o nome citado nas cláusulas de garantia
       name: String(store.trade_name || store.store_name || '').toUpperCase(),

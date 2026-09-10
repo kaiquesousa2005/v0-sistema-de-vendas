@@ -230,17 +230,42 @@ export function ContractFormDialog({
    */
   const roles = contractRoles(type)
   const isPurchase = roles.storeIsBuyer
-  const customerLabel = isPurchase ? 'Vendedor' : 'Comprador'
-  const storeSignerLabel = isPurchase ? 'Nome do comprador' : 'Nome do vendedor'
+  const isConsignment = roles.isConsignment
+  const customerLabel = isConsignment ? 'Consignante' : isPurchase ? 'Vendedor' : 'Comprador'
+  const storeSignerLabel = isConsignment
+    ? 'Nome do responsável pela loja'
+    : isPurchase
+      ? 'Nome do comprador'
+      : 'Nome do vendedor'
 
   const [customer, setCustomer] = useState<PickerItem | null>(null)
   const [sold, setSold] = useState<SoldRow[]>([newSoldRow()])
   const [trades, setTrades] = useState<TradeRow[]>([])
   const vehicleCache = useRef<Map<number, RawVehicle>>(new Map())
 
+  // Proprietário do veículo na consignação (quando está em nome de terceiro ou
+  // empresa). `hasOwner` controla a exibição dos campos; sem ele, o veículo é
+  // assumido como estando no nome do próprio consignante.
+  const [hasOwner, setHasOwner] = useState(false)
+  const [ownerName, setOwnerName] = useState('')
+  const [ownerDocument, setOwnerDocument] = useState('')
+
   const [summary, setSummary] = useState('')
   const [totalValue, setTotalValue] = useState('')
   const [observations, setObservations] = useState('')
+
+  // Exclusivos do contrato de sinal: valor da entrada e valor total do
+  // veículo. `deliveryDate`/`deliveryTime` são reaproveitados como o prazo
+  // para concretizar a compra — no sinal a seção "Entrega" muda de nome e
+  // de sentido para "Finalização da Negociação", mas o par data/hora é o mesmo.
+  const [signalValue, setSignalValue] = useState('')
+  const [saleValue, setSaleValue] = useState('')
+
+  // Exclusivos do contrato de devolução: dia e horário da compra original. O
+  // dia e horário da devolução reaproveitam `deliveryDate`/`deliveryTime`, a
+  // forma de pagamento reaproveita `summary` e o valor a restituir, `totalValue`.
+  const [purchaseDate, setPurchaseDate] = useState('')
+  const [purchaseTime, setPurchaseTime] = useState('')
 
   const [contractDate, setContractDate] = useState(todayIso())
   const [deliveryDate, setDeliveryDate] = useState(todayIso())
@@ -260,9 +285,16 @@ export function ContractFormDialog({
     setCustomer(null)
     setSold([newSoldRow()])
     setTrades([])
+    setHasOwner(false)
+    setOwnerName('')
+    setOwnerDocument('')
     setSummary('')
     setTotalValue('')
     setObservations('')
+    setSignalValue('')
+    setSaleValue('')
+    setPurchaseDate('')
+    setPurchaseTime('')
     setContractDate(todayIso())
     setDeliveryDate(todayIso())
     setDeliveryTime('')
@@ -343,12 +375,34 @@ export function ContractFormDialog({
           })),
         )
 
+        // Proprietário só vem preenchido em consignações com veículo de
+        // terceiro; se houver qualquer dado, reabre a seção.
+        setOwnerName(data.owner.name)
+        setOwnerDocument(data.owner.document)
+        setHasOwner(Boolean(data.owner.name.trim() || data.owner.document.trim()))
+
         setSummary(data.negotiation.summary)
         setTotalValue(data.negotiation.total_value ? String(data.negotiation.total_value) : '')
         setObservations(data.negotiation.observations)
+        setSignalValue(data.signal?.signal_value ? String(data.signal.signal_value) : '')
+        setSaleValue(data.signal?.sale_value ? String(data.signal.sale_value) : '')
         setContractDate(toIsoDate(payload.contract_date) || todayIso())
-        setDeliveryDate(data.delivery.date || '')
-        setDeliveryTime(data.delivery.time || '')
+        // No sinal, o prazo vem de `signal.deadline_*`; nos demais tipos, de
+        // `delivery`. Os dois compartilham os mesmos campos de data/hora do
+        // formulário.
+        setDeliveryDate(data.signal?.deadline_date || data.delivery.date || '')
+        setDeliveryTime(data.signal?.deadline_time || data.delivery.time || '')
+        // Devolução guarda pagamento, valor e datas no bloco `returnInfo`; a
+        // forma de pagamento e o valor reaproveitam summary/totalValue, e o
+        // dia/hora da devolução reaproveitam os campos de entrega.
+        if (data.returnInfo) {
+          setSummary(data.returnInfo.payment_method)
+          setTotalValue(data.returnInfo.return_value ? String(data.returnInfo.return_value) : '')
+          setDeliveryDate(data.returnInfo.return_date || '')
+          setDeliveryTime(data.returnInfo.return_time || '')
+          setPurchaseDate(data.returnInfo.purchase_date || '')
+          setPurchaseTime(data.returnInfo.purchase_time || '')
+        }
         setStoreAddress(data.store.address)
         setStoreCity(data.store.city)
         setSellerName(data.store.seller_name)
@@ -444,9 +498,15 @@ export function ContractFormDialog({
     customer != null ||
     sold.some((row) => row.item) ||
     trades.length > 0 ||
+    ownerName.trim() !== '' ||
+    ownerDocument.trim() !== '' ||
     summary.trim() !== '' ||
     totalValue.trim() !== '' ||
-    observations.trim() !== ''
+    observations.trim() !== '' ||
+    signalValue.trim() !== '' ||
+    saleValue.trim() !== '' ||
+    purchaseDate.trim() !== '' ||
+    purchaseTime.trim() !== ''
 
   /**
    * Intercepta todas as formas de fechar (X, clique fora e Esc) — o Radix
@@ -509,6 +569,12 @@ export function ContractFormDialog({
   const buildPayload = () => ({
     type,
     customer_id: customer?.id ?? null,
+    // Proprietário só é enviado na consignação com a seção aberta; nos demais
+    // tipos vai vazio para não sujar o snapshot.
+    owner:
+      isConsignment && hasOwner
+        ? { name: ownerName, document: ownerDocument }
+        : { name: '', document: '' },
     vehicles: sold
       .filter((row) => row.item)
       .map((row) => ({
@@ -517,16 +583,38 @@ export function ContractFormDialog({
         fuel: row.fuel,
         km: row.km,
       })),
-    // Na compra não há veículo de entrada. Zera aqui para o caso de o usuário
-    // ter preenchido trocas e depois trocado o tipo do contrato.
-    trade_ins: isPurchase ? [] : trades.map(({ key: _key, ...rest }) => rest),
+    // Sem veículo de entrada quando a loja é a compradora. Zera aqui para o caso
+    // de o usuário ter preenchido trocas e depois trocado o tipo do contrato.
+    trade_ins: roles.hasTradeIns ? trades.map(({ key: _key, ...rest }) => rest) : [],
     contract_date: contractDate,
     negotiation: {
       summary,
       total_value: Number(totalValue) || 0,
       observations,
     },
-    delivery: { date: deliveryDate, time: deliveryTime },
+    // No sinal, data/hora significam o prazo para concretizar a compra, então
+    // vão para `signal.deadline_*` em vez de `delivery`.
+    delivery: roles.isSignal ? { date: '', time: '' } : { date: deliveryDate, time: deliveryTime },
+    signal: roles.isSignal
+      ? {
+          signal_value: Number(signalValue) || 0,
+          sale_value: Number(saleValue) || 0,
+          deadline_date: deliveryDate,
+          deadline_time: deliveryTime,
+        }
+      : undefined,
+    // Na devolução, forma de pagamento/valor vêm de summary/totalValue e o
+    // dia/hora da devolução, dos campos de entrega.
+    returnInfo: roles.isReturn
+      ? {
+          purchase_date: purchaseDate,
+          purchase_time: purchaseTime,
+          return_date: deliveryDate,
+          return_time: deliveryTime,
+          payment_method: summary,
+          return_value: Number(totalValue) || 0,
+        }
+      : undefined,
     store: { address: storeAddress, city: storeCity, seller_name: sellerName },
   })
 
@@ -564,7 +652,34 @@ export function ContractFormDialog({
       toast.error('Selecione ao menos um veículo vendido')
       return
     }
-    if (!summary.trim()) {
+    if (roles.isSignal) {
+      if (!(Number(signalValue) > 0)) {
+        toast.error('Informe o valor do sinal')
+        return
+      }
+      if (!(Number(saleValue) > 0)) {
+        toast.error('Informe o valor total do veículo')
+        return
+      }
+      if (!deliveryDate) {
+        toast.error('Informe a data para finalizar a negociação')
+        return
+      }
+    } else if (isConsignment) {
+      if (!(Number(totalValue) > 0)) {
+        toast.error('Informe o valor acertado com o consignante')
+        return
+      }
+    } else if (roles.isReturn) {
+      if (!(Number(totalValue) > 0)) {
+        toast.error('Informe o valor da devolução')
+        return
+      }
+      if (!deliveryDate) {
+        toast.error('Informe a data da devolução')
+        return
+      }
+    } else if (!summary.trim()) {
       toast.error('Descreva a forma de negociação')
       return
     }
@@ -766,7 +881,15 @@ export function ContractFormDialog({
             {/* Veículos do contrato: vendidos ao cliente ou comprados dele */}
             <Section
               icon={Car}
-              title={isPurchase ? 'Veículos comprados' : 'Veículos vendidos'}
+              title={
+                isConsignment
+                  ? 'Veículos em consignação'
+                  : roles.isReturn
+                    ? 'Veículo devolvido'
+                    : isPurchase
+                      ? 'Veículos comprados'
+                      : 'Veículos vendidos'
+              }
               action={
                 <Button
                   type="button"
@@ -839,10 +962,69 @@ export function ContractFormDialog({
               </div>
             </Section>
 
-            {/* Veículos recebidos na troca — só na venda. Na compra a loja é
-                quem paga, então não existe veículo dado como entrada; deixar a
-                seção aqui permitiria digitar dados que o documento não imprime. */}
-            {!isPurchase && (
+            {/* Proprietário do veículo — só na consignação, quando o carro está
+                em nome de terceiro ou empresa. Fechado por padrão: sem ele, o
+                veículo é assumido como estando no nome do próprio consignante. */}
+            {isConsignment && (
+              <Section
+                icon={User}
+                title="Proprietário do veículo"
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5"
+                    onClick={() => {
+                      if (hasOwner) {
+                        setOwnerName('')
+                        setOwnerDocument('')
+                      }
+                      setHasOwner((v) => !v)
+                    }}
+                  >
+                    {hasOwner ? (
+                      <>
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Remover
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-3.5 w-3.5" />
+                        Adicionar
+                      </>
+                    )}
+                  </Button>
+                }
+              >
+                {hasOwner ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field
+                      label="Nome do proprietário"
+                      value={ownerName}
+                      onChange={setOwnerName}
+                      placeholder="NOME DE QUEM O VEÍCULO ESTÁ REGISTRADO"
+                    />
+                    <Field
+                      label="CPF/CNPJ do proprietário"
+                      value={ownerDocument}
+                      onChange={setOwnerDocument}
+                      placeholder="CPF OU CNPJ"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Preencha apenas se o veículo estiver em nome de outra pessoa ou de uma empresa,
+                    diferente do consignante.
+                  </p>
+                )}
+              </Section>
+            )}
+
+            {/* Veículos recebidos na troca — não existe na compra, onde a loja é
+                quem paga; deixar a seção aqui permitiria digitar dados que o
+                documento não imprime. */}
+            {roles.hasTradeIns && (
             <Section
               icon={ArrowLeftRight}
               title="Veículos recebidos na troca"
@@ -947,47 +1129,127 @@ export function ContractFormDialog({
             </Section>
             )}
 
-            {/* Negociação */}
+            {/* Negociação — no sinal os campos são outros: valor da entrada e
+                valor total do veículo, sem a "forma de negociação" das vendas. */}
             <Section icon={HandCoins} title="Negociação">
-              <div className="grid gap-3 sm:grid-cols-2">
+              {roles.isSignal ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Valor do sinal (R$)"
+                    value={signalValue}
+                    onChange={setSignalValue}
+                    placeholder="VALOR DEIXADO DE SINAL"
+                    type="number"
+                    required
+                  />
+                  <Field
+                    label="Valor total do veículo (R$)"
+                    value={saleValue}
+                    onChange={setSaleValue}
+                    placeholder="VALOR PELO QUAL A LOJA ESTÁ VENDENDO"
+                    type="number"
+                    required
+                  />
+                </div>
+              ) : isConsignment ? (
                 <Field
-                  label="Forma de negociação"
-                  value={summary}
-                  onChange={setSummary}
-                  placeholder="NEGOCIAÇÃO (AVISTA + FINANCIAMENTO)"
-                  required
-                />
-                <Field
-                  label="Valor total (R$)"
+                  label="Valor acertado com o consignante (R$)"
                   value={totalValue}
                   onChange={setTotalValue}
-                  placeholder="VALOR DA VENDA"
+                  placeholder="VALOR LÍQUIDO A REPASSAR AO CONSIGNANTE"
                   type="number"
                   required
+                  hint="Valor combinado a repassar ao consignante. O que a loja vender acima disso fica como remuneração pela venda."
                 />
-              </div>
+              ) : roles.isReturn ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Forma de pagamento da devolução"
+                    value={summary}
+                    onChange={setSummary}
+                    placeholder="PIX / DINHEIRO / TRANSFERÊNCIA"
+                  />
+                  <Field
+                    label="Valor da devolução (R$)"
+                    value={totalValue}
+                    onChange={setTotalValue}
+                    placeholder="VALOR A RESTITUIR AO COMPRADOR"
+                    type="number"
+                    required
+                    hint="Valor líquido restituído ao comprador. Descontos por débitos, avarias ou custos podem ser detalhados nas observações."
+                  />
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field
+                    label="Forma de negociação"
+                    value={summary}
+                    onChange={setSummary}
+                    placeholder="NEGOCIAÇÃO (AVISTA + FINANCIAMENTO)"
+                    required
+                  />
+                  <Field
+                    label="Valor total (R$)"
+                    value={totalValue}
+                    onChange={setTotalValue}
+                    placeholder="VALOR DA VENDA"
+                    type="number"
+                    required
+                  />
+                </div>
+              )}
 
               <AreaField
-                label="Observações da negociação"
+                label="Observações"
                 value={observations}
                 onChange={setObservations}
-                placeholder="**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO..."
-                hint="Aparece no contrato como OBS, logo abaixo do valor. Detalhe entradas, parcelas, descontos e prazos."
-                rows={5}
+                placeholder={
+                  roles.isSignal
+                    ? 'Detalhes adicionais sobre o sinal, se necessário...'
+                    : isConsignment
+                      ? 'Condições combinadas, prazo da consignação, forma de repasse ao consignante...'
+                      : roles.isReturn
+                        ? 'Descontos aplicados, débitos do período, avarias, motivo da devolução...'
+                        : '**R$ [VALOR] VIA PIX + [VEÍCULO/ENTRADA] + R$ [VALOR] EM [Nº]X DE R$ [VALOR] NO BOLETO BANCÁRIO...'
+                }
+                hint={
+                  roles.isSignal
+                    ? undefined
+                    : 'Aparece no contrato como OBS, logo abaixo do valor. Detalhe entradas, parcelas, descontos e prazos.'
+                }
+                rows={roles.isSignal || isConsignment || roles.isReturn ? 3 : 5}
               />
             </Section>
 
-            {/* Entrega */}
-            <Section icon={FileText} title="Entrega">
+            {/* Entrega — no sinal essa seção passa a ser o prazo para o cliente
+                concretizar a compra ("Finalização da Negociação"), sem caixa de
+                garantia: o sinal não promete cobertura nenhuma de motor/câmbio.
+                A consignação não tem entrega, então a seção é omitida. */}
+            {roles.isReturn ? (
+            <Section icon={FileText} title="Datas da compra e da devolução">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
-                  label="Data de entrega"
+                  label="Data da compra"
+                  value={purchaseDate}
+                  onChange={setPurchaseDate}
+                  type="date"
+                  hint="Dia em que o cliente comprou o veículo."
+                />
+                <Field
+                  label="Horário da compra"
+                  value={purchaseTime}
+                  onChange={setPurchaseTime}
+                  type="time"
+                />
+                <Field
+                  label="Data da devolução"
                   value={deliveryDate}
                   onChange={setDeliveryDate}
                   type="date"
+                  required
                 />
                 <Field
-                  label="Hora de entrega"
+                  label="Horário da devolução"
                   value={deliveryTime}
                   onChange={setDeliveryTime}
                   type="time"
@@ -996,12 +1258,52 @@ export function ContractFormDialog({
               <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <p className="text-xs text-muted-foreground">
-                  Garantia fixa de {SALE_WARRANTY.days} dias ou{' '}
-                  {SALE_WARRANTY.km.toLocaleString('pt-BR')} KM (o que ocorrer primeiro), já incluída
-                  na cláusula F do contrato.
+                  Cláusulas de proteção já incluídas: compra presencial (sem direito de
+                  arrependimento), devolução por liberalidade da loja, veículo recebido no estado em
+                  que está, exigência de veículo quitado com juros do financiamento por conta do
+                  comprador e quitação plena e irrevogável.
                 </p>
               </div>
             </Section>
+            ) : !isConsignment ? (
+            <Section icon={FileText} title={roles.isSignal ? 'Finalização da Negociação' : 'Entrega'}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field
+                  label={roles.isSignal ? 'Data para finalizar' : 'Data de entrega'}
+                  value={deliveryDate}
+                  onChange={setDeliveryDate}
+                  type="date"
+                  required={roles.isSignal}
+                />
+                <Field
+                  label={roles.isSignal ? 'Horário para finalizar' : 'Hora de entrega'}
+                  value={deliveryTime}
+                  onChange={setDeliveryTime}
+                  type="time"
+                />
+              </div>
+              {!roles.isSignal &&
+                (roles.hasWarranty ? (
+                  <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">
+                      Garantia fixa de {SALE_WARRANTY.days} dias ou{' '}
+                      {SALE_WARRANTY.km.toLocaleString('pt-BR')} KM (o que ocorrer primeiro), já
+                      incluída na cláusula F do contrato.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 rounded-md bg-muted/60 p-3">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">
+                      {isPurchase
+                        ? 'Compra sem garantia da loja: quem vende é o cliente.'
+                        : 'Repasse sem nenhuma garantia da loja, conforme a última cláusula do contrato.'}
+                    </p>
+                  </div>
+                ))}
+            </Section>
+            ) : null}
 
             {/* Dados do contrato e da loja */}
             <Section icon={FileSignature} title="Loja e assinatura">
