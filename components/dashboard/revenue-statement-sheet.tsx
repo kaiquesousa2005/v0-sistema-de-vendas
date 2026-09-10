@@ -23,9 +23,7 @@ const COMPANY = {
   estadual: 'Inscrição Estadual: 064.787.494',
   address: 'Av. Américo Barreira, 536 - Demócrito Rocha - Fortaleza/CE - CEP: 60.440-092',
   owner: 'Arlene Freire Sousa',
-  accountant: 'Tarcio Roma Santana',
-  accountantCrc: 'Contador CRC-CE 026949/0-0',
-  accountantCpf: 'CPF: 857.953.145-44',
+  accountant: 'CONTADOR',
 }
 
 /** Número em pt-BR sem "R$", como no demonstrativo em papel (ex.: 965.700,00). */
@@ -142,9 +140,6 @@ export function RevenueStatementSheet({
         </div>
         <div className="text-center">
           <div className="mb-1 border-t border-black/80" />
-          <p className="font-bold">{COMPANY.accountant}</p>
-          <p>{COMPANY.accountantCrc}</p>
-          <p>{COMPANY.accountantCpf}</p>
           <p className="mt-1 font-semibold uppercase">Contador</p>
         </div>
       </section>
