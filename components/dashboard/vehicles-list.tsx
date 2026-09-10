@@ -27,6 +27,8 @@ interface Vehicle {
   purchase_value: number
   renavam: string
   chassis: string
+  crv?: string
+  crv_security_code?: string
   status: string
 }
 
@@ -41,6 +43,8 @@ const emptyForm = {
   purchase_value: '',
   renavam: '',
   chassis: '',
+  crv: '',
+  crv_security_code: '',
 }
 
 export function VehiclesList() {
@@ -113,6 +117,8 @@ export function VehiclesList() {
         purchase_value: vehicle.purchase_value.toString(),
         renavam: vehicle.renavam,
         chassis: vehicle.chassis,
+        crv: vehicle.crv || '',
+        crv_security_code: vehicle.crv_security_code || '',
       })
     } else {
       setEditingId(null)
@@ -342,6 +348,22 @@ export function VehiclesList() {
                 <label className="text-sm font-medium">Chassis *</label>
                 <Input value={formData.chassis} onChange={(e) => setFormData({ ...formData, chassis: e.target.value })} required />
               </div>
+              <div>
+                <label className="text-sm font-medium">CRV</label>
+                <Input
+                  value={formData.crv}
+                  onChange={(e) => setFormData({ ...formData, crv: e.target.value })}
+                  placeholder="Nº do CRV (opcional)"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Nº de Segurança do CRV</label>
+                <Input
+                  value={formData.crv_security_code}
+                  onChange={(e) => setFormData({ ...formData, crv_security_code: e.target.value })}
+                  placeholder="Código de segurança (opcional)"
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setOpenDialog(false)}>Cancelar</Button>
@@ -471,6 +493,8 @@ export function VehiclesList() {
                 <p><span className="font-medium text-foreground">Compra:</span> R$ {(Number(vehicle.purchase_value) || 0).toFixed(2)}</p>
                 <p><span className="font-medium text-foreground">RENAVAN:</span> {vehicle.renavam}</p>
                 <p><span className="font-medium text-foreground">Chassis:</span> <span className="font-mono">{vehicle.chassis}</span></p>
+                {vehicle.crv && <p><span className="font-medium text-foreground">CRV:</span> <span className="font-mono">{vehicle.crv}</span></p>}
+                {vehicle.crv_security_code && <p><span className="font-medium text-foreground">Cód. Segurança CRV:</span> <span className="font-mono">{vehicle.crv_security_code}</span></p>}
               </div>
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <Button size="sm" variant="outline" onClick={() => handleOpenDialog(vehicle)}>

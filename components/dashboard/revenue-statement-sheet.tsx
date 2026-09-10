@@ -140,7 +140,7 @@ export function RevenueStatementSheet({
         <div className="text-center">
           <div className="mb-1 border-t border-black/80" />
           <p className="mt-1 font-semibold uppercase">Contador</p>
-        </div>
+        </div> sistem
       </section>
     </div>
   )
