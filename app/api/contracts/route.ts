@@ -57,7 +57,18 @@ export async function GET(request: NextRequest) {
     const contracts = await sql`
       SELECT
         id, type, contract_number, customer_id, vehicle_id,
-        customer_name, vehicle_label, total_value, contract_date, created_at
+        customer_name, vehicle_label, total_value, contract_date, created_at,
+        COALESCE(
+          (
+            SELECT jsonb_agg(jsonb_build_object(
+              'brand_model', elem->>'brand_model',
+              'plate', elem->>'plate',
+              'year', elem->>'year'
+            ))
+            FROM jsonb_array_elements(data->'vehicles') AS elem
+          ),
+          '[]'::jsonb
+        ) AS vehicles
       FROM contracts
       WHERE store_id = ${storeId}
         AND (${type} = '' OR type = ${type})
@@ -76,6 +87,7 @@ export async function GET(request: NextRequest) {
       contracts: contracts.map((c) => ({
         ...c,
         total_value: Number(c.total_value) || 0,
+        vehicles: Array.isArray(c.vehicles) ? c.vehicles : [],
       })),
       total: contracts.length,
     })

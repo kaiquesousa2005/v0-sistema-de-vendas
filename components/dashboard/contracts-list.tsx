@@ -29,6 +29,7 @@ import {
 } from '@/lib/contracts'
 import {
   AlertTriangle,
+  Car,
   Download,
   FilePlus2,
   FileText,
@@ -39,12 +40,19 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+interface ContractVehicleSummary {
+  brand_model: string
+  plate: string
+  year: string
+}
+
 interface ContractRow {
   id: number
   type: ContractType
   contract_number: string
   customer_name: string
   vehicle_label: string
+  vehicles: ContractVehicleSummary[]
   total_value: number
   contract_date: string
 }
@@ -199,7 +207,7 @@ export function ContractsList() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-2.5 md:grid-cols-2">
             {contracts.map((contract) => {
               // Contrato salvo pela metade: o snapshot não vem na listagem, então
               // a falta é inferida dos campos resolvidos no momento da gravação.
@@ -209,14 +217,14 @@ export function ContractsList() {
               return (
               <Card
                 key={contract.id}
-                className={`group flex items-start justify-between gap-3 p-4 transition-colors hover:border-primary/50 ${
+                className={`group flex items-start justify-between gap-2 rounded-lg p-3 transition-colors hover:border-primary/50 ${
                   isIncomplete ? 'border-amber-500/40' : ''
                 }`}
               >
                 <button
                   type="button"
                   onClick={() => router.push(`/contratos/${contract.id}`)}
-                  className="min-w-0 cursor-pointer flex-1 space-y-2 text-left"
+                  className="min-w-0 cursor-pointer flex-1 space-y-1.5 text-left"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs font-semibold tabular-nums text-primary">
@@ -244,9 +252,35 @@ export function ContractsList() {
                       <span className="text-muted-foreground">Cliente não informado</span>
                     )}
                   </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {contract.vehicle_label || 'Veículo não informado'}
-                  </p>
+
+                  {contract.vehicles.length > 0 ? (
+                    <ul className="space-y-0.5">
+                      {contract.vehicles.map((v, i) => {
+                        const year = v.year?.replace(/\//g, '').trim() ? v.year : ''
+                        return (
+                          <li
+                            key={i}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                          >
+                            <Car className="h-3 w-3 shrink-0" />
+                            <span className="min-w-0 truncate text-foreground">
+                              {v.brand_model || 'Veículo'}
+                            </span>
+                            {(year || v.plate) && (
+                              <span className="shrink-0 whitespace-nowrap tabular-nums">
+                                {year && `· ${year}`}
+                                {v.plate && <span className="font-mono"> · {v.plate}</span>}
+                              </span>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {contract.vehicle_label || 'Veículo não informado'}
+                    </p>
+                  )}
 
                   <p className="text-sm font-semibold tabular-nums">
                     {formatCurrency(contract.total_value)}
