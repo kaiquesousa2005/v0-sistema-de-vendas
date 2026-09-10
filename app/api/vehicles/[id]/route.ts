@@ -16,6 +16,8 @@ const updateVehicleSchema = z.object({
   sale_value: z.number().positive().optional(),
   renavam: z.string().min(1).optional(),
   chassis: z.string().min(1).optional(),
+  crv: z.string().optional(),
+  crv_security_code: z.string().optional(),
 })
 
 async function getStoreId(request: NextRequest): Promise<number | null> {
@@ -65,6 +67,8 @@ export async function PUT(
         sale_value = ${v.sale_value || null},
         renavam = ${v.renavam},
         chassis = ${v.chassis},
+        crv = ${v.crv || null},
+        crv_security_code = ${v.crv_security_code || null},
         updated_at = NOW()
       WHERE id = ${vehicleId} AND store_id = ${storeId}
       RETURNING *

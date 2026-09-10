@@ -16,6 +16,8 @@ const vehicleSchema = z.object({
   purchase_value: z.number().positive(),
   renavam: z.string().min(1),
   chassis: z.string().min(1),
+  crv: z.string().optional(),
+  crv_security_code: z.string().optional(),
 })
 
 async function getStoreId(request: NextRequest): Promise<number | null> {
@@ -119,11 +121,13 @@ export async function POST(request: NextRequest) {
     const result = await sql`
       INSERT INTO vehicles (
         store_id, type, plate, brand, model, version,
-        manufacture_year, model_year, purchase_value, renavam, chassis
+        manufacture_year, model_year, purchase_value, renavam, chassis,
+        crv, crv_security_code
       ) VALUES (
         ${storeId}, ${data.type}, ${data.plate.toUpperCase()}, ${data.brand}, ${data.model},
         ${data.version || null}, ${data.manufacture_year}, ${data.model_year},
-        ${data.purchase_value}, ${data.renavam}, ${data.chassis}
+        ${data.purchase_value}, ${data.renavam}, ${data.chassis},
+        ${data.crv || null}, ${data.crv_security_code || null}
       )
       RETURNING *
     `
