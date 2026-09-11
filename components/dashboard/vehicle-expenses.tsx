@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -13,9 +13,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  ArrowLeft, Plus, Pencil, Trash2, Loader2, AlertTriangle, History,
+  ArrowLeft, Plus, Pencil, Trash2, Loader2, AlertTriangle, History, FileDown,
 } from 'lucide-react'
 import { Header } from '@/components/dashboard/header'
+import {
+  VehicleExpensesSheet,
+  type VehicleHeader,
+} from '@/components/dashboard/vehicle-expenses-sheet'
 
 const CATEGORIES = [
   'Bancos',
@@ -63,10 +67,13 @@ const emptyForm = { description: '', category: 'Outros' as Category, value: '', 
 export function VehicleExpenses({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const [vehicleId, setVehicleId] = useState<string>('')
+  const [vehicle, setVehicle] = useState<VehicleHeader | null>(null)
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [deletedExpenses, setDeletedExpenses] = useState<DeletedExpense[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
+  const sheetRef = useRef<HTMLDivElement>(null)
 
   // Add dialog
   const [addDialog, setAddDialog] = useState(false)
@@ -99,6 +106,15 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
     }
   }, [])
 
+  const fetchVehicle = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/vehicles/${id}`)
+      if (res.ok) setVehicle(await res.json())
+    } catch (e) {
+      console.error('[v0] fetch vehicle error:', e)
+    }
+  }, [])
+
   const fetchDeleted = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/vehicles/${id}/expenses/deleted`)
@@ -115,11 +131,31 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
     const init = async () => {
       const { id } = await params
       setVehicleId(id)
+      fetchVehicle(id)
       fetchExpenses(id)
       fetchDeleted(id)
     }
     init()
-  }, [params, fetchExpenses, fetchDeleted])
+  }, [params, fetchVehicle, fetchExpenses, fetchDeleted])
+
+  const handleDownloadPdf = async () => {
+    const node = sheetRef.current?.querySelector<HTMLElement>('.contract-sheet')
+    if (!node) return
+
+    setIsGeneratingPdf(true)
+    try {
+      const { downloadContractPdf } = await import('@/lib/contract-pdf')
+      const label = vehicle
+        ? `Gastos - ${vehicle.brand} ${vehicle.model} - ${vehicle.plate}`
+        : 'Relatorio de Gastos'
+      await downloadContractPdf(node, label)
+    } catch (error) {
+      console.error('[v0] download expenses pdf error:', error)
+      toast.error('Erro ao gerar o PDF de gastos')
+    } finally {
+      setIsGeneratingPdf(false)
+    }
+  }
 
   // --- ADD ---
   const handleAdd = async (e: React.FormEvent) => {
@@ -270,10 +306,24 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
               <p className="text-sm text-muted-foreground">Total de Gastos</p>
               <p className="text-2xl font-bold text-destructive">{formatCurrency(total)}</p>
             </div>
-            <Button onClick={() => setAddDialog(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Adicionar Gasto
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleDownloadPdf}
+                disabled={isGeneratingPdf || expenses.length === 0}
+              >
+                {isGeneratingPdf ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <FileDown className="w-4 h-4 mr-2" />
+                )}
+                Baixar PDF
+              </Button>
+              <Button onClick={() => setAddDialog(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Adicionar Gasto
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -514,6 +564,16 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Folha do relatório renderizada fora da tela; é o nó capturado para o
+          PDF ao clicar em "Baixar PDF". */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed left-[-10000px] top-0"
+        ref={sheetRef}
+      >
+        <VehicleExpensesSheet vehicle={vehicle} rows={expenses} />
+      </div>
     </div>
   )
 }
