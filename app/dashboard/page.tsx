@@ -1,25 +1,9 @@
-import { Suspense } from 'react'
 import { Header } from '@/components/dashboard/header'
-import { DashboardStats } from '@/components/dashboard/dashboard-stats'
-import { VehiclesChart } from '@/components/dashboard/vehicles-chart'
-import { ExpensesChart } from '@/components/dashboard/expenses-chart'
-import { Skeleton } from '@/components/ui/skeleton'
+import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
 
 export const metadata = {
   title: 'Dashboard - AutoGest',
-  description: 'Dashboard com estatísticas de veículos e gastos',
-}
-
-function DashboardSkeleton() {
-  return (
-    <div className="space-y-4">
-      <Skeleton className="h-32 w-full rounded-lg" />
-      <div className="grid gap-4 md:grid-cols-2">
-        <Skeleton className="h-80 w-full rounded-lg" />
-        <Skeleton className="h-80 w-full rounded-lg" />
-      </div>
-    </div>
-  )
+  description: 'Visão geral de vendas, gastos, estoque e lucros',
 }
 
 export default function DashboardPage() {
@@ -32,16 +16,7 @@ export default function DashboardPage() {
           <p className="text-muted-foreground">Visão geral do seu negócio</p>
         </div>
 
-        <Suspense fallback={<DashboardSkeleton />}>
-          <div className="space-y-8">
-            <DashboardStats />
-            
-            <div className="grid gap-6 md:grid-cols-2">
-              <VehiclesChart />
-              <ExpensesChart />
-            </div>
-          </div>
-        </Suspense>
+        <DashboardOverview />
       </main>
     </div>
   )

@@ -31,6 +31,29 @@ async function getStoreId(request: NextRequest): Promise<number | null> {
   }
 }
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const storeId = await getStoreId(request)
+  if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+
+  try {
+    const sql = neon(process.env.DATABASE_URL!)
+    const result = await sql`
+      SELECT * FROM vehicles WHERE id = ${parseInt(id)} AND store_id = ${storeId}
+    `
+    if (result.length === 0) {
+      return NextResponse.json({ error: 'Veículo não encontrado' }, { status: 404 })
+    }
+    return NextResponse.json(result[0])
+  } catch {
+    return NextResponse.json({ error: 'Erro ao buscar veículo' }, { status: 500 })
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
