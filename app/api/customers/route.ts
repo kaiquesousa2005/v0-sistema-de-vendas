@@ -16,20 +16,22 @@ async function getStoreId(request: NextRequest): Promise<number | null> {
   }
 }
 
+// Apenas nome, data de nascimento, telefone e CPF são obrigatórios no
+// cadastro. Os demais campos podem ser completados depois, na edição.
 const customerSchema = z.object({
   full_name: z.string().min(2, 'Nome obrigatório'),
   birth_date: z.string().min(1, 'Data de nascimento obrigatória'),
   phone: z.string().min(10, 'Telefone inválido'),
-  email: z.string().email('Email inválido').optional().or(z.literal('')),
-  rg: z.string().min(1, 'RG obrigatório'),
   cpf: z.string().min(11, 'CPF inválido'),
-  address_street: z.string().min(1, 'Rua obrigatória'),
-  address_number: z.string().min(1, 'Número obrigatório'),
+  email: z.string().email('Email inválido').optional().or(z.literal('')),
+  rg: z.string().optional().or(z.literal('')),
+  address_street: z.string().optional().or(z.literal('')),
+  address_number: z.string().optional().or(z.literal('')),
   address_complement: z.string().optional().or(z.literal('')),
-  address_neighborhood: z.string().min(1, 'Bairro obrigatório'),
-  address_city: z.string().min(1, 'Cidade obrigatória'),
-  address_state: z.string().length(2, 'UF inválida'),
-  address_zip: z.string().min(8, 'CEP inválido'),
+  address_neighborhood: z.string().optional().or(z.literal('')),
+  address_city: z.string().optional().or(z.literal('')),
+  address_state: z.string().optional().or(z.literal('')),
+  address_zip: z.string().optional().or(z.literal('')),
   cnh_pathname: z.string().optional().or(z.literal('')),
 })
 
@@ -124,10 +126,11 @@ export async function POST(request: NextRequest) {
         cnh_pathname
       ) VALUES (
         ${storeId}, ${data.full_name}, ${data.birth_date},
-        ${data.phone}, ${data.email || null}, ${data.rg}, ${cleanCpf},
-        ${data.address_street}, ${data.address_number}, ${data.address_complement || null},
-        ${data.address_neighborhood}, ${data.address_city}, ${data.address_state.toUpperCase()},
-        ${data.address_zip.replace(/\D/g, '')}, ${data.cnh_pathname || null}
+        ${data.phone}, ${data.email || null}, ${data.rg || null}, ${cleanCpf},
+        ${data.address_street || null}, ${data.address_number || null}, ${data.address_complement || null},
+        ${data.address_neighborhood || null}, ${data.address_city || null},
+        ${data.address_state ? data.address_state.toUpperCase() : null},
+        ${data.address_zip ? data.address_zip.replace(/\D/g, '') : null}, ${data.cnh_pathname || null}
       )
       RETURNING id, full_name, (cnh_pathname IS NOT NULL) AS has_cnh
     `

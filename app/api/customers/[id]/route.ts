@@ -17,19 +17,22 @@ async function getStoreId(request: NextRequest): Promise<number | null> {
   }
 }
 
+// Nome, nascimento, telefone continuam com validação quando enviados; os
+// demais campos aceitam string vazia, pois o cadastro pode ser completado
+// aos poucos.
 const updateSchema = z.object({
   full_name: z.string().min(2).optional(),
   birth_date: z.string().min(1).optional(),
   phone: z.string().min(10).optional(),
   email: z.string().email().optional().or(z.literal('')),
-  rg: z.string().min(1).optional(),
-  address_street: z.string().min(1).optional(),
-  address_number: z.string().min(1).optional(),
+  rg: z.string().optional().or(z.literal('')),
+  address_street: z.string().optional().or(z.literal('')),
+  address_number: z.string().optional().or(z.literal('')),
   address_complement: z.string().optional().or(z.literal('')),
-  address_neighborhood: z.string().min(1).optional(),
-  address_city: z.string().min(1).optional(),
-  address_state: z.string().length(2).optional(),
-  address_zip: z.string().min(8).optional(),
+  address_neighborhood: z.string().optional().or(z.literal('')),
+  address_city: z.string().optional().or(z.literal('')),
+  address_state: z.string().optional().or(z.literal('')),
+  address_zip: z.string().optional().or(z.literal('')),
   cnh_pathname: z.string().optional().or(z.literal('')),
 })
 
