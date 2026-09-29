@@ -1,6 +1,13 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+@media print {
+  body:has(.accounts-sheet) > * { display: none !important; }
+  body:has(.accounts-sheet) .accounts-sheet { display: block !important; position: static !important; width: 100% !important; }
+  body:has(.accounts-sheet) .accounts-sheet table { break-inside: auto; }
+  body:has(.accounts-sheet) .accounts-sheet tr { break-inside: avoid; }
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {
