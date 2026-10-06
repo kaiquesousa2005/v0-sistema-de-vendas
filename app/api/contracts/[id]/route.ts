@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { jwtVerify } from 'jose'
 import { z } from 'zod'
-import { todayIso } from '@/lib/contracts'
+import { contractTotalValue, todayIso } from '@/lib/contracts'
 import {
   buildSaleSnapshot,
   rememberStoreDefaults,
@@ -96,7 +96,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           vehicle_id = ${vehicleIds[0] ?? null},
           customer_name = ${customerName},
           vehicle_label = ${vehicleLabel},
-          total_value = ${snapshot.negotiation.total_value},
+          total_value = ${contractTotalValue(data.type, snapshot)},
           contract_date = ${data.contract_date || todayIso()},
           data = ${JSON.stringify(snapshot)}::jsonb,
           updated_at = NOW()

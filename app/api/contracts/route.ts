@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { jwtVerify } from 'jose'
 import { z } from 'zod'
-import { CONTRACT_TYPES, todayIso } from '@/lib/contracts'
+import { CONTRACT_TYPES, contractTotalValue, todayIso } from '@/lib/contracts'
 import {
   buildSaleSnapshot,
   rememberStoreDefaults,
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
             customer_name, vehicle_label, total_value, contract_date, data
           ) VALUES (
             ${storeId}, ${contractType}, ${contractNumber}, ${data.customer_id || null}, ${vehicleIds[0] ?? null},
-            ${customerName}, ${vehicleLabel}, ${snapshot.negotiation.total_value},
+            ${customerName}, ${vehicleLabel}, ${contractTotalValue(contractType, snapshot)},
             ${data.contract_date || todayIso()}, ${JSON.stringify(snapshot)}::jsonb
           )
           RETURNING id, type, contract_number, customer_name, vehicle_label, total_value, contract_date

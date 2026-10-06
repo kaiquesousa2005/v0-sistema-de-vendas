@@ -396,10 +396,12 @@ function SignalBody({
   buyer,
   vehicle,
   signal,
+  observations,
 }: {
   buyer: ReturnType<typeof normalizeSaleData>['buyer']
   vehicle: ContractVehicle
   signal: NonNullable<ReturnType<typeof normalizeSaleData>['signal']>
+  observations: string
 }) {
   const deadline = signal.deadline_date
     ? `${longDatePt(signal.deadline_date)}${signal.deadline_time ? ` ÀS ${signal.deadline_time}` : ''}`
@@ -439,6 +441,11 @@ function SignalBody({
           <span className="font-bold">FINALIZACAO DA NEGOCIACAO:</span>
           <span className="font-semibold">{deadline}</span>
         </div>
+        {observations && (
+          <p className="mt-1 whitespace-pre-wrap">
+            <strong>OBS:</strong> {observations}
+          </p>
+        )}
       </section>
 
       {/* Dados bancários fixos: conta para onde o sinal foi enviado. */}
@@ -671,6 +678,7 @@ className="mb-1.5 block w-[50%] mx-auto"
           buyer={buyer}
           vehicle={soldList[0]}
           signal={signal ?? { signal_value: 0, sale_value: 0, deadline_date: '', deadline_time: '' }}
+          observations={negotiation.observations}
         />
       ) : roles.isConsignment ? (
         <ConsignmentBody
