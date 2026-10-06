@@ -13,7 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  ArrowLeft, Plus, Pencil, Trash2, Loader2, AlertTriangle, History, FileDown,
+  ArrowLeft, Plus, Pencil, Trash2, Loader2, AlertTriangle, History, FileDown, Printer,
 } from 'lucide-react'
 import { Header } from '@/components/dashboard/header'
 import {
@@ -157,6 +157,23 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
     }
   }
 
+  const [isPrinting, setIsPrinting] = useState(false)
+  const handlePrint = async () => {
+    const node = sheetRef.current?.querySelector<HTMLElement>('.contract-sheet')
+    if (!node) return
+
+    setIsPrinting(true)
+    try {
+      const { printContractPdf } = await import('@/lib/contract-pdf')
+      await printContractPdf(node)
+    } catch (error) {
+      console.error('[v0] print expenses pdf error:', error)
+      toast.error('Erro ao preparar a impressão')
+    } finally {
+      setIsPrinting(false)
+    }
+  }
+
   // --- ADD ---
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -275,6 +292,7 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
   }
 
   const total = expenses.reduce((sum, e) => sum + Number(e.value), 0)
+  const purchaseValue = Number(vehicle?.purchase_value) || 0
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-'
@@ -301,12 +319,36 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
 
         {/* Summary bar */}
         <Card className="mb-6">
-          <CardContent className="flex items-center justify-between py-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Total de Gastos</p>
-              <p className="text-2xl font-bold text-destructive">{formatCurrency(total)}</p>
-            </div>
-            <div className="flex items-center gap-2">
+          <CardContent className="flex flex-col gap-4 py-4 md:flex-row md:items-center md:justify-between">
+            <dl className="grid grid-cols-3 gap-4 md:gap-8">
+              <div>
+                <dt className="text-xs text-muted-foreground sm:text-sm">Valor de Compra</dt>
+                <dd className="text-lg font-bold tabular-nums sm:text-2xl">{formatCurrency(purchaseValue)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground sm:text-sm">Total de Gastos</dt>
+                <dd className="text-lg font-bold tabular-nums text-destructive sm:text-2xl">{formatCurrency(total)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground sm:text-sm">Custo Total</dt>
+                <dd className="text-lg font-bold tabular-nums text-primary sm:text-2xl">
+                  {formatCurrency(purchaseValue + total)}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handlePrint}
+                disabled={isPrinting || expenses.length === 0}
+              >
+                {isPrinting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Printer className="w-4 h-4 mr-2" />
+                )}
+                Imprimir
+              </Button>
               <Button
                 variant="outline"
                 onClick={handleDownloadPdf}

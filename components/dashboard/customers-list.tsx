@@ -36,15 +36,15 @@ interface Customer {
   birth_date: string
   phone: string
   email: string | null
-  rg: string
+  rg: string | null
   cpf: string
-  address_street: string
-  address_number: string
+  address_street: string | null
+  address_number: string | null
   address_complement: string | null
-  address_neighborhood: string
-  address_city: string
-  address_state: string
-  address_zip: string
+  address_neighborhood: string | null
+  address_city: string | null
+  address_state: string | null
+  address_zip: string | null
   has_cnh: boolean
   created_at: string
 }
@@ -188,15 +188,15 @@ export function CustomersList() {
         birth_date: customer.birth_date?.slice(0, 10) ?? '',
         phone: customer.phone,
         email: customer.email ?? '',
-        rg: customer.rg,
+        rg: customer.rg ?? '',
         cpf: formatCPF(customer.cpf),
-        address_street: customer.address_street,
-        address_number: customer.address_number,
+        address_street: customer.address_street ?? '',
+        address_number: customer.address_number ?? '',
         address_complement: customer.address_complement ?? '',
-        address_neighborhood: customer.address_neighborhood,
-        address_city: customer.address_city,
-        address_state: customer.address_state,
-        address_zip: formatZip(customer.address_zip),
+        address_neighborhood: customer.address_neighborhood ?? '',
+        address_city: customer.address_city ?? '',
+        address_state: customer.address_state ?? '',
+        address_zip: customer.address_zip ? formatZip(customer.address_zip) : '',
       })
     } else {
       setEditingId(null)
@@ -398,18 +398,26 @@ export function CustomersList() {
                       <div className="border-t border-border bg-muted/30 px-3 py-4">
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                           <DetailRow label="Nascimento" value={formatDate(c.birth_date)} />
-                          <DetailRow label="RG" value={c.rg} />
+                          <DetailRow label="RG" value={c.rg ?? ''} />
                           <DetailRow label="E-mail" value={c.email ?? ''} />
                           <DetailRow
                             label="Endereço"
-                            value={`${c.address_street}, ${c.address_number}${c.address_complement ? ` - ${c.address_complement}` : ''}`}
+                            value={
+                              c.address_street
+                                ? `${c.address_street}, ${c.address_number ?? ''}${c.address_complement ? ` - ${c.address_complement}` : ''}`
+                                : ''
+                            }
                           />
-                          <DetailRow label="Bairro" value={c.address_neighborhood} />
+                          <DetailRow label="Bairro" value={c.address_neighborhood ?? ''} />
                           <DetailRow
                             label="Cidade / UF"
-                            value={`${c.address_city} / ${c.address_state}`}
+                            value={
+                              c.address_city || c.address_state
+                                ? `${c.address_city ?? ''}${c.address_state ? ` / ${c.address_state}` : ''}`
+                                : ''
+                            }
                           />
-                          <DetailRow label="CEP" value={formatZip(c.address_zip)} />
+                          <DetailRow label="CEP" value={c.address_zip ? formatZip(c.address_zip) : ''} />
                           <DetailRow label="Cadastrado em" value={formatDate(c.created_at)} />
                         </div>
 
@@ -503,11 +511,10 @@ export function CustomersList() {
                   required
                 />
                 <InputField
-                  label="RG *"
+                  label="RG"
                   value={form.rg}
                   onChange={(v) => setForm({ ...form, rg: v })}
                   placeholder="00.000.000-0"
-                  required
                 />
                 <div className="sm:col-span-2">
                   <InputField
@@ -524,23 +531,21 @@ export function CustomersList() {
             {/* Endereço */}
             <section className="space-y-3">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Endereço
+                Endereço <span className="font-normal normal-case">(opcional)</span>
               </h3>
               <div className="grid gap-3 sm:grid-cols-6">
                 <div className="sm:col-span-4">
                   <InputField
-                    label="Rua *"
+                    label="Rua"
                     value={form.address_street}
                     onChange={(v) => setForm({ ...form, address_street: v })}
-                    required
                   />
                 </div>
                 <div className="sm:col-span-2">
                   <InputField
-                    label="Número *"
+                    label="Número"
                     value={form.address_number}
                     onChange={(v) => setForm({ ...form, address_number: v })}
-                    required
                   />
                 </div>
                 <div className="sm:col-span-3">
@@ -553,27 +558,24 @@ export function CustomersList() {
                 </div>
                 <div className="sm:col-span-3">
                   <InputField
-                    label="Bairro *"
+                    label="Bairro"
                     value={form.address_neighborhood}
                     onChange={(v) => setForm({ ...form, address_neighborhood: v })}
-                    required
                   />
                 </div>
                 <div className="sm:col-span-3">
                   <InputField
-                    label="Cidade *"
+                    label="Cidade"
                     value={form.address_city}
                     onChange={(v) => setForm({ ...form, address_city: v })}
-                    required
                   />
                 </div>
                 <div className="sm:col-span-1">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">UF *</label>
+                    <label className="text-xs font-medium text-muted-foreground">UF</label>
                     <select
                       value={form.address_state}
                       onChange={(e) => setForm({ ...form, address_state: e.target.value })}
-                      required
                       className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                       <option value="">—</option>
@@ -585,11 +587,10 @@ export function CustomersList() {
                 </div>
                 <div className="sm:col-span-2">
                   <InputField
-                    label="CEP *"
+                    label="CEP"
                     value={form.address_zip}
                     onChange={(v) => setForm({ ...form, address_zip: formatZip(v) })}
                     placeholder="00000-000"
-                    required
                   />
                 </div>
               </div>

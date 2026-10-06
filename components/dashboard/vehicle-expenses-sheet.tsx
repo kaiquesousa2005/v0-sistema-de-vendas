@@ -19,6 +19,7 @@ export interface VehicleHeader {
   model_year: number
   renavam?: string
   chassis?: string
+  purchase_value?: number | string
 }
 
 /**
@@ -59,6 +60,7 @@ export function VehicleExpensesSheet({
   generatedDate?: string
 }) {
   const total = rows.reduce((sum, r) => sum + r.value, 0)
+  const purchaseValue = Number(vehicle?.purchase_value) || 0
   const count = rows.length
   const today = generatedDate ?? new Date().toISOString().slice(0, 10)
 
@@ -176,6 +178,25 @@ export function VehicleExpensesSheet({
             </td>
             <td className="border border-black/70 bg-black/[0.06] px-3 py-1.5 text-right font-bold tabular-nums">
               {formatAmount(total)}
+            </td>
+          </tr>
+          <tr>
+            <td colSpan={3} className="border border-black/70 px-3 py-1.5 font-bold uppercase">
+              Valor de compra
+            </td>
+            <td className="border border-black/70 px-3 py-1.5 text-right font-bold tabular-nums">
+              {formatAmount(purchaseValue)}
+            </td>
+          </tr>
+          <tr>
+            <td
+              colSpan={3}
+              className="border border-black/70 bg-black/[0.12] px-3 py-2 text-[12px] font-bold uppercase"
+            >
+              Custo total do veículo (compra + gastos)
+            </td>
+            <td className="border border-black/70 bg-black/[0.12] px-3 py-2 text-right text-[12px] font-bold tabular-nums">
+              {formatAmount(purchaseValue + total)}
             </td>
           </tr>
         </tfoot>

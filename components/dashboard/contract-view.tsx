@@ -14,7 +14,7 @@ import {
   shortDatePt,
   type ContractType,
 } from '@/lib/contracts'
-import { AlertTriangle, ArrowLeft, Download, Loader2, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Download, Loader2, Pencil, Printer } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Contract {
@@ -49,6 +49,23 @@ export function ContractView({ contractId }: { contractId: number }) {
       setIsDownloading(false)
     }
   }, [contract])
+
+  const [isPrinting, setIsPrinting] = useState(false)
+  const handlePrint = useCallback(async () => {
+    const sheet = sheetRef.current?.querySelector<HTMLElement>('.contract-sheet')
+    if (!sheet) return
+
+    setIsPrinting(true)
+    try {
+      const { printContractPdf } = await import('@/lib/contract-pdf')
+      await printContractPdf(sheet)
+    } catch (error) {
+      console.error('[v0] print pdf error:', error)
+      toast.error('Erro ao preparar a impressão')
+    } finally {
+      setIsPrinting(false)
+    }
+  }, [])
 
   const loadContract = useCallback(async () => {
     try {
@@ -112,7 +129,7 @@ export function ContractView({ contractId }: { contractId: number }) {
   const config = CONTRACT_TYPES[contract.type]
   // Contratos salvos incompletos continuam abrindo normalmente; o que falta
   // aparece como aviso em vez de virar erro de renderização.
-  const missing = missingContractFields(contract.data)
+  const missing = missingContractFields(contract.data, contract.type)
 
   return (
     <div className="min-h-screen bg-muted/40 print:bg-white">
@@ -150,6 +167,10 @@ export function ContractView({ contractId }: { contractId: number }) {
             <Button variant="outline" size="sm" className="gap-2" onClick={() => setIsEditOpen(true)}>
               <Pencil className="h-4 w-4" />
               Editar
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2" onClick={handlePrint} disabled={isPrinting}>
+              {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              {isPrinting ? 'Preparando...' : 'Imprimir'}
             </Button>
             <Button size="sm" className="gap-2" onClick={handleDownload} disabled={isDownloading}>
               {isDownloading ? (

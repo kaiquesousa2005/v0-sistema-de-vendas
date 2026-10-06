@@ -80,6 +80,53 @@ function makeBreakFinder(canvas: HTMLCanvasElement) {
  * `fileName` é usado apenas como nome do arquivo, não aparece no conteúdo.
  */
 export async function downloadContractPdf(node: HTMLElement, fileName: string) {
+  const pdf = await buildContractPdf(node)
+  pdf.save(`${fileName}.pdf`)
+}
+
+/**
+ * Gera o mesmo PDF e abre a caixa de impressão do navegador direto, sem
+ * baixar o arquivo. O PDF é carregado num iframe oculto e impresso de lá;
+ * se o navegador bloquear a impressão do iframe, abre o PDF numa nova aba
+ * (com autoPrint embutido) como alternativa.
+ */
+export async function printContractPdf(node: HTMLElement) {
+  const pdf = await buildContractPdf(node)
+  pdf.autoPrint()
+  const blob = pdf.output('blob')
+  const url = URL.createObjectURL(blob)
+
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.right = '0'
+  iframe.style.bottom = '0'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  iframe.style.border = '0'
+  iframe.setAttribute('aria-hidden', 'true')
+  iframe.src = url
+
+  const cleanup = () => {
+    iframe.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+      // Mantém o iframe vivo enquanto a caixa de impressão estiver aberta
+      window.setTimeout(cleanup, 60_000)
+    } catch {
+      cleanup()
+      window.open(URL.createObjectURL(blob), '_blank')
+    }
+  }
+
+  document.body.appendChild(iframe)
+}
+
+async function buildContractPdf(node: HTMLElement) {
   // Import dinâmico: as duas libs só são baixadas quando o usuário pede o PDF
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
     import('html2canvas-pro'),
@@ -135,8 +182,7 @@ export async function downloadContractPdf(node: HTMLElement, fileName: string) {
       widthMm,
       heightMm,
     )
-    pdf.save(`${fileName}.pdf`)
-    return
+    return pdf
   }
 
   const findBreak = makeBreakFinder(canvas)
@@ -185,5 +231,5 @@ export async function downloadContractPdf(node: HTMLElement, fileName: string) {
     page++
   }
 
-  pdf.save(`${fileName}.pdf`)
+  return pdf
 }

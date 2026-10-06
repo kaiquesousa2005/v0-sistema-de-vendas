@@ -420,6 +420,18 @@ export function missingContractFields(data: unknown, type: ContractType = 'venda
   return missing
 }
 
+/**
+ * Valor que representa o contrato na listagem/faturamento. No sinal de compra
+ * a negociação não tem valor total — o valor real é o do veículo informado
+ * no bloco do sinal.
+ */
+export function contractTotalValue(type: ContractType, data: SaleContractData): number {
+  if (contractRoles(type).isSignal) {
+    return Number(data.signal?.sale_value) || Number(data.negotiation.total_value) || 0
+  }
+  return Number(data.negotiation.total_value) || 0
+}
+
 /** Nome do mês em maiúsculas, ex.: 8 -> "AGOSTO". */
 export function monthNamePt(month: number): string {
   return MONTHS_PT[month - 1] ?? ''

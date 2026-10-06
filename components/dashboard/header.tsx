@@ -5,11 +5,12 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { Home, ShoppingCart, CheckCircle, LogOut, Users, FileSignature } from 'lucide-react'
+import { Home, ShoppingCart, CheckCircle, LogOut, Users, FileSignature, WalletCards } from 'lucide-react'
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: Home },
   { label: 'Gastos', href: '/gastos', icon: ShoppingCart },
+  { label: 'Contas', href: '/contas', icon: WalletCards },
   { label: 'Vendidos', href: '/vendidos', icon: CheckCircle },
   { label: 'Clientes', href: '/clientes', icon: Users },
   { label: 'Contratos', href: '/contratos', icon: FileSignature },
