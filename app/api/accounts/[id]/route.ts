@@ -27,7 +27,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const result = await sql`
       UPDATE accounts_payable SET description=${data.description}, category=${data.category}, due_date=${data.due_date}, amount=${data.amount}, status=${data.status}, payment_date=${data.payment_date || null}, notes=${data.notes || null}, updated_at=NOW()
       WHERE id=${Number(id)} AND store_id=${storeId}
-      RETURNING id, description, category, due_date, amount, status, payment_date, notes
+      RETURNING id, description, category, to_char(due_date, 'YYYY-MM-DD') AS due_date, amount, status, to_char(payment_date, 'YYYY-MM-DD') AS payment_date, notes
     `
     if (!result.length) return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 })
     return NextResponse.json(result[0])

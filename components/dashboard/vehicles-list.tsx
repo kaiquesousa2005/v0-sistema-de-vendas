@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CurrencyInput } from '@/components/ui/currency-input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
@@ -330,13 +331,9 @@ export function VehiclesList() {
               </div>
               <div>
                 <label className="text-sm font-medium">Valor de Compra (R$) *</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
+                <CurrencyInput
                   value={formData.purchase_value}
-                  onChange={(e) => setFormData({ ...formData, purchase_value: e.target.value })}
-                  placeholder="0,00"
+                  onValueChange={(v) => setFormData({ ...formData, purchase_value: v })}
                   required
                 />
               </div>
@@ -407,13 +404,9 @@ export function VehiclesList() {
                 {/* Campo valor de venda */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Valor de Venda (R$) *</label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
+                  <CurrencyInput
                     value={saleValue}
-                    onChange={(e) => setSaleValue(e.target.value)}
-                    placeholder="0,00"
+                    onValueChange={setSaleValue}
                     className="text-lg font-semibold h-11"
                     required
                     autoFocus

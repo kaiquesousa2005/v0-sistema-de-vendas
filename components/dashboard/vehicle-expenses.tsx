@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CurrencyInput } from '@/components/ui/currency-input'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -458,10 +459,9 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">Valor (R$) *</label>
-              <Input
-                type="number" step="0.01" min="0.01" placeholder="0,00"
+              <CurrencyInput
                 value={form.value}
-                onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
+                onValueChange={v => setForm(f => ({ ...f, value: v }))}
                 required
               />
             </div>
@@ -510,10 +510,9 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">Valor (R$) *</label>
-              <Input
-                type="number" step="0.01" min="0.01"
+              <CurrencyInput
                 value={editForm.value}
-                onChange={e => setEditForm(f => ({ ...f, value: e.target.value }))}
+                onValueChange={v => setEditForm(f => ({ ...f, value: v }))}
                 required
               />
             </div>
