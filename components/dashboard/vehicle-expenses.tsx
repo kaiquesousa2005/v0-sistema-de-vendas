@@ -306,7 +306,7 @@ export function VehicleExpenses({ params }: { params: Promise<{ id: string }> })
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <main className="container mx-auto px-4 py-6 max-w-4xl">
+      <main className="container mx-auto px-4 py-6 max-w-6xl">
 
         <div className="flex items-center gap-3 mb-6">
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
