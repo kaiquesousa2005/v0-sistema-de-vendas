@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CurrencyInput } from '@/components/ui/currency-input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -87,12 +88,16 @@ function Field({ label, value, onChange, placeholder, type = 'text', required, h
       <label className="text-xs font-medium text-foreground">
         {label} {required && <span className="text-destructive">*</span>}
       </label>
-      <Input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-      />
+      {type === 'currency' ? (
+        <CurrencyInput value={value} onValueChange={onChange} />
+      ) : (
+        <Input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+        />
+      )}
       {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   )
@@ -1139,7 +1144,7 @@ export function ContractFormDialog({
                     value={signalValue}
                     onChange={setSignalValue}
                     placeholder="VALOR DEIXADO DE SINAL"
-                    type="number"
+                    type="currency"
                     required
                   />
                   <Field
@@ -1147,7 +1152,7 @@ export function ContractFormDialog({
                     value={saleValue}
                     onChange={setSaleValue}
                     placeholder="VALOR PELO QUAL A LOJA ESTÁ VENDENDO"
-                    type="number"
+                    type="currency"
                     required
                   />
                 </div>
@@ -1157,7 +1162,7 @@ export function ContractFormDialog({
                   value={totalValue}
                   onChange={setTotalValue}
                   placeholder="VALOR LÍQUIDO A REPASSAR AO CONSIGNANTE"
-                  type="number"
+                  type="currency"
                   required
                   hint="Valor combinado a repassar ao consignante. O que a loja vender acima disso fica como remuneração pela venda."
                 />
@@ -1174,7 +1179,7 @@ export function ContractFormDialog({
                     value={totalValue}
                     onChange={setTotalValue}
                     placeholder="VALOR A RESTITUIR AO COMPRADOR"
-                    type="number"
+                    type="currency"
                     required
                     hint="Valor líquido restituído ao comprador. Descontos por débitos, avarias ou custos podem ser detalhados nas observações."
                   />
@@ -1193,7 +1198,7 @@ export function ContractFormDialog({
                     value={totalValue}
                     onChange={setTotalValue}
                     placeholder="VALOR DA VENDA"
-                    type="number"
+                    type="currency"
                     required
                   />
                 </div>

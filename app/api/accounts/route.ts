@@ -35,12 +35,12 @@ export async function GET(request: NextRequest) {
     const month = Number(sp.get('month') || new Date().getMonth() + 1)
     const year = Number(sp.get('year') || new Date().getFullYear())
     const rows = await sql`
-      SELECT id, description, category, due_date, amount, status, payment_date, notes
+      SELECT id, description, category, to_char(due_date, 'YYYY-MM-DD') AS due_date, amount, status, to_char(payment_date, 'YYYY-MM-DD') AS payment_date, notes
       FROM accounts_payable
       WHERE store_id = ${storeId}
         AND EXTRACT(MONTH FROM due_date) = ${month}
         AND EXTRACT(YEAR FROM due_date) = ${year}
-      ORDER BY due_date ASC, description ASC
+      ORDER BY accounts_payable.due_date ASC, description ASC
     `
     const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0)
     const paid = rows.filter((row) => row.status === 'Pago').reduce((sum, row) => sum + Number(row.amount || 0), 0)
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     const result = await sql`
       INSERT INTO accounts_payable (store_id, description, category, due_date, amount, status, payment_date, notes)
       VALUES (${storeId}, ${data.description}, ${data.category}, ${data.due_date}, ${data.amount}, ${data.status}, ${data.payment_date || null}, ${data.notes || null})
-      RETURNING id, description, category, due_date, amount, status, payment_date, notes
+      RETURNING id, description, category, to_char(due_date, 'YYYY-MM-DD') AS due_date, amount, status, to_char(payment_date, 'YYYY-MM-DD') AS payment_date, notes
     `
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {
