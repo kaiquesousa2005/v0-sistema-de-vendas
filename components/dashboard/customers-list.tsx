@@ -25,6 +25,7 @@ import {
   FileCheck2, FileX2, Upload, Download, ChevronDown, X,
 } from 'lucide-react'
 import { Header } from '@/components/dashboard/header'
+import { BirthdayBanner } from '@/components/dashboard/birthday-banner'
 import { PaginationBar } from '@/components/dashboard/pagination-bar'
 import { useDebounce } from '@/hooks/use-debounce'
 
@@ -313,6 +314,8 @@ export function CustomersList() {
             Novo Cliente
           </Button>
         </div>
+
+        <BirthdayBanner />
 
         {/* Busca */}
         <div className="relative mb-4">
