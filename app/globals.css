@@ -162,3 +162,29 @@
     page-break-inside: avoid;
   }
 }
+
+@layer components {
+  .calendar-mark {
+    position: relative;
+  }
+  .calendar-mark::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+  .calendar-mark-paid::after {
+    background-color: var(--color-emerald-500);
+  }
+  .calendar-mark-pending::after {
+    background-color: var(--color-amber-500);
+  }
+  .calendar-mark-overdue::after {
+    background-color: var(--color-red-500);
+  }
+}

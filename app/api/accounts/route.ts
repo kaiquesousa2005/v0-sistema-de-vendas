@@ -20,7 +20,7 @@ const accountSchema = z.object({
   description: z.string().trim().min(1, 'Descrição obrigatória'),
   category: z.string().trim().min(1, 'Categoria obrigatória'),
   due_date: z.string().min(1, 'Data de vencimento obrigatória'),
-  amount: z.number().nonnegative('Valor inválido'),
+  amount: z.number().nonnegative('Valor inválido').nullable().optional(),
   status: z.enum(['Pendente', 'Pago', 'Atrasado']).default('Pendente'),
   payment_date: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     const sql = neon(process.env.DATABASE_URL!)
     const result = await sql`
       INSERT INTO accounts_payable (store_id, description, category, due_date, amount, status, payment_date, notes)
-      VALUES (${storeId}, ${data.description}, ${data.category}, ${data.due_date}, ${data.amount}, ${data.status}, ${data.payment_date || null}, ${data.notes || null})
+      VALUES (${storeId}, ${data.description}, ${data.category}, ${data.due_date}, ${data.amount ?? null}, ${data.status}, ${data.payment_date || null}, ${data.notes || null})
       RETURNING id, description, category, to_char(due_date, 'YYYY-MM-DD') AS due_date, amount, status, to_char(payment_date, 'YYYY-MM-DD') AS payment_date, notes
     `
     return NextResponse.json(result[0], { status: 201 })

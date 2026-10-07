@@ -17,6 +17,8 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { mutate as globalMutate } from 'swr'
+import { Calendar } from '@/components/ui/calendar'
 
 type Status = 'Pendente' | 'Pago' | 'Atrasado'
 type Account = {
@@ -24,7 +26,7 @@ type Account = {
   description: string
   category: string
   due_date: string
-  amount: number | string
+  amount: number | string | null
   status: Status
   payment_date: string | null
   notes: string | null
@@ -35,8 +37,28 @@ type CategoryGroup = { category: string; rows: Account[]; subtotal: number }
 const categories = ['Veículos', 'Cartões', 'Casa', 'Loja', 'Impostos', 'Serviços', 'Pessoal', 'Outros']
 const statuses: Status[] = ['Pendente', 'Pago', 'Atrasado']
 
-const money = (value: number | string) =>
+const money = (value: number | string | null) =>
   Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+const hasAmount = (value: Account['amount']) => value !== null && value !== undefined && value !== ''
+
+const amountLabel = (value: Account['amount']) => (hasAmount(value) ? money(value) : 'A definir')
+
+const parseDate = (value: string) => {
+  const [y, m, d] = value.slice(0, 10).split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+const toKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+function todayKey() {
+  return toKey(new Date())
+}
+
+function revalidateNotifications() {
+  globalMutate('/api/notifications')
+}
 
 /** Formata "YYYY-MM-DD" (ou ISO completo) como "DD/MM/YYYY" sem depender de fuso horário. */
 function formatDate(value: string | null | undefined) {
@@ -102,7 +124,7 @@ function AccountsSheet({ groups, month, year, total }: { groups: CategoryGroup[]
                   <td className="border p-2">{a.description}</td>
                   <td className="border p-2">{formatDate(a.due_date)}</td>
                   <td className="border p-2">{a.status}</td>
-                  <td className="border p-2 text-right">{money(a.amount)}</td>
+                  <td className="border p-2 text-right">{amountLabel(a.amount)}</td>
                 </tr>
               ))}
             </Fragment>
@@ -233,7 +255,7 @@ function CopyPreviousMonthDialog({
                           <span className="truncate">{a.description}</span>
                           <span className="shrink-0 text-xs text-muted-foreground">venc. {formatDate(a.due_date)}</span>
                         </span>
-                        <span className="shrink-0 font-medium">{money(a.amount)}</span>
+                        <span className="shrink-0 font-medium">{amountLabel(a.amount)}</span>
                       </label>
                     ))}
                   </div>
@@ -268,7 +290,11 @@ function AccountFormDialog({
   const save = async () => {
     setSaving(true)
     try {
-      const payload = { ...form, amount: Number(form.amount), payment_date: form.payment_date || null }
+      const payload = {
+        ...form,
+        amount: form.amount === '' ? null : Number(form.amount),
+        payment_date: form.payment_date || null,
+      }
       const response = await fetch(editing ? `/api/accounts/${editing.id}` : '/api/accounts', {
         method: editing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -308,8 +334,11 @@ function AccountFormDialog({
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="acc-amount">Valor</Label>
+              <Label htmlFor="acc-amount">
+                Valor <span className="font-normal text-muted-foreground">(opcional)</span>
+              </Label>
               <CurrencyInput id="acc-amount" value={form.amount} onValueChange={(amount) => setForm({ ...form, amount })} />
+              <p className="text-xs text-muted-foreground">Deixe em branco se ainda não souber (ex.: fatura do cartão).</p>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -335,7 +364,7 @@ function AccountFormDialog({
             <Label htmlFor="acc-notes">Observações</Label>
             <Textarea id="acc-notes" value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
-          <Button onClick={save} disabled={saving || !form.description || !form.amount || !form.due_date}>
+          <Button onClick={save} disabled={saving || !form.description || !form.due_date}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
             {editing ? 'Salvar alterações' : 'Cadastrar conta'}
           </Button>
@@ -366,6 +395,7 @@ export function AccountsPage() {
       const data = await fetchAccounts(month, year)
       setAccounts(data.accounts || [])
       setTotals(data.totals || { total: 0, paid: 0, pending: 0 })
+      revalidateNotifications()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erro ao carregar contas')
     } finally {
@@ -375,11 +405,34 @@ export function AccountsPage() {
 
   useEffect(() => { load() }, [load])
 
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
+
+  useEffect(() => { setSelectedDay(null) }, [month, year])
+
   const groups = useMemo(() => groupByCategory(accounts), [accounts])
+  const visibleGroups = useMemo(
+    () => (selectedDay ? groupByCategory(accounts.filter((a) => a.due_date.slice(0, 10) === selectedDay)) : groups),
+    [accounts, groups, selectedDay],
+  )
+
+  const calendarMarks = useMemo(() => {
+    const today = todayKey()
+    const paid: Date[] = []
+    const pending: Date[] = []
+    const overdue: Date[] = []
+    for (const a of accounts) {
+      const key = a.due_date.slice(0, 10)
+      const date = parseDate(key)
+      if (a.status === 'Pago') paid.push(date)
+      else if (a.status === 'Atrasado' || key < today) overdue.push(date)
+      else pending.push(date)
+    }
+    return { paid, pending, overdue }
+  }, [accounts])
 
   const openNew = () => {
     setEditing(null)
-    setInitialForm({ description: '', category: 'Outros', due_date: firstDayOf(month, year), amount: '', status: 'Pendente', payment_date: null, notes: '' })
+    setInitialForm({ description: '', category: 'Outros', due_date: selectedDay ?? firstDayOf(month, year), amount: '', status: 'Pendente', payment_date: null, notes: '' })
     setFormOpen(true)
   }
 
@@ -389,7 +442,7 @@ export function AccountsPage() {
       description: a.description,
       category: a.category,
       due_date: a.due_date.slice(0, 10),
-      amount: Number(a.amount || 0).toFixed(2),
+      amount: hasAmount(a.amount) ? Number(a.amount).toFixed(2) : '',
       status: a.status,
       payment_date: a.payment_date?.slice(0, 10) || null,
       notes: a.notes || '',
@@ -476,6 +529,70 @@ export function AccountsPage() {
         </Card>
       </div>
 
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CalendarDays className="h-4 w-4 text-primary" />
+            Calendário de pagamentos
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 md:flex-row md:items-start">
+          <Calendar
+            mode="single"
+            locale={ptBR}
+            month={cursor}
+            onMonthChange={(date) => setCursor(new Date(date.getFullYear(), date.getMonth(), 1))}
+            selected={selectedDay ? parseDate(selectedDay) : undefined}
+            onSelect={(date) => setSelectedDay(date ? toKey(date) : null)}
+            modifiers={calendarMarks}
+            modifiersClassNames={{
+              pending: 'calendar-mark calendar-mark-pending',
+              overdue: 'calendar-mark calendar-mark-overdue',
+              paid: 'calendar-mark calendar-mark-paid',
+            }}
+            className="mx-auto rounded-lg border md:mx-0 [--cell-size:--spacing(10)]"
+          />
+          <div className="flex flex-1 flex-col gap-3">
+            <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" />A vencer</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" />Atrasada</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Paga</span>
+            </div>
+            {selectedDay ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">Vencimentos em {formatDate(selectedDay)}</p>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedDay(null)}>Ver mês inteiro</Button>
+                </div>
+                {visibleGroups.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhuma conta vence neste dia.</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {visibleGroups.flatMap((g) => g.rows).map((a) => (
+                      <li key={a.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm">
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{a.description}</span>
+                          <span className="text-xs text-muted-foreground">{a.category} · {a.status}</span>
+                        </span>
+                        <span className="shrink-0 font-semibold">{amountLabel(a.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <Button size="sm" variant="outline" className="self-start" onClick={openNew}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nova conta neste dia
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Clique em um dia para ver as contas que vencem nele ou cadastrar um novo lembrete de pagamento.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {groups.length > 0 && (
         <div className="flex flex-wrap gap-2" aria-label="Total por categoria">
           {groups.map((g) => (
@@ -516,7 +633,7 @@ export function AccountsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {groups.map((group) => (
+                  {visibleGroups.map((group) => (
                     <Fragment key={group.category}>
                       <tr className="border-t bg-primary/10">
                         <td colSpan={2} className="p-3 font-semibold">
@@ -532,7 +649,9 @@ export function AccountsPage() {
                             {a.notes && <p className="text-xs font-normal text-muted-foreground">{a.notes}</p>}
                           </td>
                           <td className="p-3">{formatDate(a.due_date)}</td>
-                          <td className="p-3 font-semibold">{money(a.amount)}</td>
+                          <td className={`p-3 font-semibold ${hasAmount(a.amount) ? '' : 'text-muted-foreground italic font-normal'}`}>
+                            {amountLabel(a.amount)}
+                          </td>
                           <td className="p-3">
                             <Badge variant={a.status === 'Pago' ? 'default' : a.status === 'Atrasado' ? 'destructive' : 'secondary'}>
                               {a.status}

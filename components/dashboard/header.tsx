@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { NotificationsBell } from '@/components/dashboard/notifications-bell'
 import { Home, ShoppingCart, CheckCircle, LogOut, Users, FileSignature, WalletCards } from 'lucide-react'
 
 const navItems = [
@@ -56,6 +57,7 @@ export function Header() {
           </nav>
 
           <div className="flex items-center gap-2">
+            <NotificationsBell />
             <ThemeToggle />
             <Button
               variant="ghost"
