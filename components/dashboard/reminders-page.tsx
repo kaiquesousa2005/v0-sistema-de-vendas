@@ -3,13 +3,13 @@
 import { useState } from 'react'
 import useSWR from 'swr'
 import { toast } from 'sonner'
-import { Bike, Cake, Car, CheckCircle2, Circle, Edit, Loader2, MessageCircle, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { Cake, Car, CheckCircle2, Circle, Edit, Loader2, MessageCircle, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { EntityPicker, type PickerItem } from '@/components/dashboard/entity-picker'
+import { Input } from '@/components/ui/input'
 import { whatsappLink } from '@/components/dashboard/birthday-banner'
 
 type ReminderStatus = 'aberto' | 'finalizado'
@@ -17,15 +17,12 @@ type StatusFilter = 'todos' | ReminderStatus
 
 interface Reminder {
   id: number
-  vehicle_id: number
   description: string
   status: ReminderStatus
   created_at: string
   finished_at: string | null
-  brand: string
-  model: string
-  plate: string
-  type: string
+  vehicle_name: string
+  vehicle_plate: string
 }
 
 interface UpcomingBirthday {
@@ -55,19 +52,6 @@ function birthdayLabel(days: number) {
   return `Em ${days} dias`
 }
 
-async function fetchVehicleOptions(search: string): Promise<PickerItem[]> {
-  const params = new URLSearchParams({ limit: '20', includeSold: '1' })
-  if (search.trim()) params.set('search', search.trim())
-  const res = await fetch(`/api/vehicles?${params}`)
-  const data = await res.json()
-  if (!res.ok) return []
-  return (data.vehicles ?? []).map((v: { id: number; brand: string; model: string; plate: string; manufacture_year: number; model_year: number }) => ({
-    id: v.id,
-    primary: `${v.brand} ${v.model}`,
-    secondary: `${v.plate} • ${v.manufacture_year}/${v.model_year}`,
-  }))
-}
-
 export function RemindersPage() {
   const [filter, setFilter] = useState<StatusFilter>('aberto')
   const remindersKey = `/api/reminders${filter === 'todos' ? '' : `?status=${filter}`}`
@@ -79,7 +63,8 @@ export function RemindersPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Reminder | null>(null)
-  const [vehicle, setVehicle] = useState<PickerItem | null>(null)
+  const [vehicleName, setVehicleName] = useState('')
+  const [vehiclePlate, setVehiclePlate] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -87,21 +72,24 @@ export function RemindersPage() {
 
   const openNew = () => {
     setEditing(null)
-    setVehicle(null)
+    setVehicleName('')
+    setVehiclePlate('')
     setDescription('')
     setDialogOpen(true)
   }
 
   const openEdit = (r: Reminder) => {
     setEditing(r)
-    setVehicle({ id: r.vehicle_id, primary: `${r.brand} ${r.model}`, secondary: r.plate })
+    setVehicleName(r.vehicle_name)
+    setVehiclePlate(r.vehicle_plate)
     setDescription(r.description)
     setDialogOpen(true)
   }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!vehicle) return toast.error('Selecione um veículo')
+    if (!vehicleName.trim()) return toast.error('Informe o nome do veículo')
+    if (!vehiclePlate.trim()) return toast.error('Informe a placa')
     if (!description.trim()) return toast.error('Descreva o lembrete')
 
     setSaving(true)
@@ -109,7 +97,11 @@ export function RemindersPage() {
       const res = await fetch(editing ? `/api/reminders/${editing.id}` : '/api/reminders', {
         method: editing ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vehicleId: vehicle.id, description: description.trim() }),
+        body: JSON.stringify({
+          vehicleName: vehicleName.trim(),
+          vehiclePlate: vehiclePlate.trim(),
+          description: description.trim(),
+        }),
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Erro ao salvar lembrete')
@@ -216,10 +208,10 @@ export function RemindersPage() {
                       <div className="min-w-0 flex-1 space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="flex items-center gap-1.5 text-sm font-semibold">
-                            {r.type === 'moto' ? <Bike className="h-4 w-4" /> : <Car className="h-4 w-4" />}
-                            {r.brand} {r.model}
+                            <Car className="h-4 w-4" />
+                            {r.vehicle_name}
                           </span>
-                          <span className="font-mono text-xs text-muted-foreground">{r.plate}</span>
+                          <span className="font-mono text-xs text-muted-foreground">{r.vehicle_plate}</span>
                           <Badge
                             variant="outline"
                             className={
@@ -317,19 +309,33 @@ export function RemindersPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing ? 'Editar lembrete' : 'Novo lembrete'}</DialogTitle>
-            <DialogDescription>Escolha o veículo e descreva o que precisa ser feito.</DialogDescription>
+            <DialogDescription>Informe o veículo e descreva o que precisa ser feito.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSave} className="space-y-4">
-            <div className="space-y-1.5">
-              <span className="text-sm font-medium">Veículo *</span>
-              <EntityPicker
-                value={vehicle}
-                onChange={setVehicle}
-                fetcher={fetchVehicleOptions}
-                placeholder="Selecionar veículo cadastrado"
-                searchPlaceholder="Buscar por placa, marca ou modelo..."
-                emptyText="Nenhum veículo encontrado."
-              />
+            <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
+              <div className="space-y-1.5">
+                <label htmlFor="reminder-vehicle-name" className="text-sm font-medium">Veículo *</label>
+                <Input
+                  id="reminder-vehicle-name"
+                  value={vehicleName}
+                  onChange={(e) => setVehicleName(e.target.value)}
+                  placeholder="Ex.: Honda Civic EXL"
+                  maxLength={150}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="reminder-vehicle-plate" className="text-sm font-medium">Placa *</label>
+                <Input
+                  id="reminder-vehicle-plate"
+                  value={vehiclePlate}
+                  onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
+                  placeholder="ABC1D23"
+                  maxLength={20}
+                  className="font-mono uppercase"
+                  required
+                />
+              </div>
             </div>
             <div className="space-y-1.5">
               <label htmlFor="reminder-description" className="text-sm font-medium">Descrição *</label>

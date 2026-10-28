@@ -17,7 +17,8 @@ async function getStoreId(request: NextRequest): Promise<number | null> {
 }
 
 const updateSchema = z.object({
-  vehicleId: z.number().int().positive().optional(),
+  vehicleName: z.string().trim().min(1, 'Informe o nome do veículo').max(150).optional(),
+  vehiclePlate: z.string().trim().min(1, 'Informe a placa').max(20).transform((p) => p.toUpperCase()).optional(),
   description: z.string().trim().min(1, 'Descreva o lembrete').max(2000).optional(),
   status: z.enum(['aberto', 'finalizado']).optional(),
 })
@@ -36,15 +37,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const current = await sql`SELECT * FROM reminders WHERE id = ${reminderId} AND store_id = ${storeId}`
     if (current.length === 0) return NextResponse.json({ error: 'Lembrete não encontrado' }, { status: 404 })
 
-    if (data.vehicleId) {
-      const vehicle = await sql`SELECT id FROM vehicles WHERE id = ${data.vehicleId} AND store_id = ${storeId}`
-      if (vehicle.length === 0) return NextResponse.json({ error: 'Veículo não encontrado' }, { status: 404 })
-    }
-
     const status = data.status ?? current[0].status
     const result = await sql`
       UPDATE reminders SET
-        vehicle_id = ${data.vehicleId ?? current[0].vehicle_id},
+        vehicle_name = ${data.vehicleName ?? current[0].vehicle_name},
+        vehicle_plate = ${data.vehiclePlate ?? current[0].vehicle_plate},
         description = ${data.description ?? current[0].description},
         status = ${status},
         finished_at = CASE WHEN ${status} = 'finalizado' THEN COALESCE(finished_at, NOW()) ELSE NULL END,

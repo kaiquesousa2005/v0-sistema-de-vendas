@@ -17,7 +17,8 @@ async function getStoreId(request: NextRequest): Promise<number | null> {
 }
 
 const createSchema = z.object({
-  vehicleId: z.number().int().positive({ message: 'Selecione um veículo' }),
+  vehicleName: z.string().trim().min(1, 'Informe o nome do veículo').max(150),
+  vehiclePlate: z.string().trim().min(1, 'Informe a placa').max(20).transform((p) => p.toUpperCase()),
   description: z.string().trim().min(1, 'Descreva o lembrete').max(2000),
 })
 
@@ -31,12 +32,13 @@ export async function GET(request: NextRequest) {
     const status = ['aberto', 'finalizado'].includes(statusParam) ? statusParam : ''
 
     const reminders = await sql`
-      SELECT r.id, r.vehicle_id, r.description, r.status,
+      SELECT r.id, r.description, r.status,
         to_char(r.created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS created_at,
         to_char(r.finished_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS finished_at,
-        v.brand, v.model, v.plate, v.type
+        COALESCE(r.vehicle_name, v.brand || ' ' || v.model, '') AS vehicle_name,
+        COALESCE(r.vehicle_plate, v.plate, '') AS vehicle_plate
       FROM reminders r
-      JOIN vehicles v ON v.id = r.vehicle_id
+      LEFT JOIN vehicles v ON v.id = r.vehicle_id
       WHERE r.store_id = ${storeId} AND (${status} = '' OR r.status = ${status})
       ORDER BY (r.status = 'finalizado') ASC, r.created_at DESC
       LIMIT 200
@@ -54,16 +56,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const sql = neon(process.env.DATABASE_URL!)
-    const { vehicleId, description } = createSchema.parse(await request.json())
-
-    const vehicle = await sql`SELECT id FROM vehicles WHERE id = ${vehicleId} AND store_id = ${storeId}`
-    if (vehicle.length === 0) {
-      return NextResponse.json({ error: 'Veículo não encontrado' }, { status: 404 })
-    }
+    const { vehicleName, vehiclePlate, description } = createSchema.parse(await request.json())
 
     const result = await sql`
-      INSERT INTO reminders (store_id, vehicle_id, description)
-      VALUES (${storeId}, ${vehicleId}, ${description})
+      INSERT INTO reminders (store_id, vehicle_name, vehicle_plate, description)
+      VALUES (${storeId}, ${vehicleName}, ${vehiclePlate}, ${description})
       RETURNING id
     `
     return NextResponse.json(result[0], { status: 201 })
