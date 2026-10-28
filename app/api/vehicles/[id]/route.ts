@@ -18,6 +18,7 @@ const updateVehicleSchema = z.object({
   chassis: z.string().min(1).optional(),
   crv: z.string().optional(),
   crv_security_code: z.string().optional(),
+  stage: z.enum(['preparacao', 'patio']).optional(),
 })
 
 async function getStoreId(request: NextRequest): Promise<number | null> {
@@ -92,6 +93,7 @@ export async function PUT(
         chassis = ${v.chassis},
         crv = ${v.crv || null},
         crv_security_code = ${v.crv_security_code || null},
+        stage = ${v.stage || 'preparacao'},
         updated_at = NOW()
       WHERE id = ${vehicleId} AND store_id = ${storeId}
       RETURNING *

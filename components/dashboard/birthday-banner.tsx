@@ -4,7 +4,7 @@ import { Cake, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useNotifications } from '@/hooks/use-notifications'
 
-function whatsappLink(phone: string | null, name: string) {
+export function whatsappLink(phone: string | null, name: string) {
   const digits = (phone || '').replace(/\D/g, '')
   if (digits.length < 10) return null
   const number = digits.startsWith('55') ? digits : `55${digits}`

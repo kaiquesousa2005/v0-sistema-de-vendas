@@ -31,7 +31,20 @@ interface Vehicle {
   crv?: string
   crv_security_code?: string
   status: string
+  stage: VehicleStage
+  total_expenses: number
 }
+
+type VehicleStage = 'preparacao' | 'patio'
+type StageFilter = 'todos' | VehicleStage
+
+const STAGE_META: Record<VehicleStage | 'vendido', { label: string; className: string }> = {
+  preparacao: { label: 'Preparação', className: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400' },
+  patio: { label: 'Pátio', className: 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400' },
+  vendido: { label: 'Vendido', className: 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400' },
+}
+
+const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 const emptyForm = {
   type: 'carro',
@@ -54,6 +67,7 @@ export function VehiclesList() {
   const [totalPages, setTotalPages] = useState(1)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [stageFilter, setStageFilter] = useState<StageFilter>('todos')
   const debouncedSearch = useDebounce(search, 400)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -69,7 +83,7 @@ export function VehiclesList() {
   const [saleValue, setSaleValue] = useState('')
   const [isMarkingSold, setIsMarkingSold] = useState(false)
 
-  const fetchVehicles = useCallback(async (targetPage: number, term: string) => {
+  const fetchVehicles = useCallback(async (targetPage: number, term: string, stage: StageFilter) => {
     setIsLoading(true)
     try {
       const params = new URLSearchParams({
@@ -77,6 +91,7 @@ export function VehiclesList() {
         limit: String(PAGE_SIZE),
       })
       if (term.trim()) params.set('search', term.trim())
+      if (stage !== 'todos') params.set('stage', stage)
 
       const response = await fetch(`/api/vehicles?${params.toString()}`)
       const data = await response.json()
@@ -96,13 +111,39 @@ export function VehiclesList() {
   }, [])
 
   // Volta para a primeira página sempre que o termo de busca muda
-  useEffect(() => { setPage(1) }, [debouncedSearch])
+  useEffect(() => { setPage(1) }, [debouncedSearch, stageFilter])
 
   useEffect(() => {
-    fetchVehicles(page, debouncedSearch)
-  }, [page, debouncedSearch, fetchVehicles])
+    fetchVehicles(page, debouncedSearch, stageFilter)
+  }, [page, debouncedSearch, stageFilter, fetchVehicles])
 
-  const reload = () => fetchVehicles(page, debouncedSearch)
+  const reload = () => fetchVehicles(page, debouncedSearch, stageFilter)
+
+  const handleChangeStage = async (vehicle: Vehicle, next: VehicleStage | 'vendido') => {
+    if (next === 'vendido') {
+      handleOpenSoldDialog(vehicle)
+      return
+    }
+    if (next === vehicle.stage) return
+
+    setVehicles((prev) => prev.map((v) => (v.id === vehicle.id ? { ...v, stage: next } : v)))
+    try {
+      const response = await fetch(`/api/vehicles/${vehicle.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage: next }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Erro ao atualizar marcador')
+      }
+      toast.success(`${vehicle.brand} ${vehicle.model} marcado como ${STAGE_META[next].label}`)
+      if (stageFilter !== 'todos') reload()
+    } catch (error) {
+      setVehicles((prev) => prev.map((v) => (v.id === vehicle.id ? { ...v, stage: vehicle.stage } : v)))
+      toast.error(error instanceof Error ? error.message : 'Erro ao atualizar marcador')
+    }
+  }
 
   const handleOpenDialog = (vehicle?: Vehicle) => {
     if (vehicle) {
@@ -263,9 +304,31 @@ export function VehiclesList() {
         </Button>
       </div>
 
-      <p className="text-xs text-muted-foreground tabular-nums">
-        {total} veículo{total === 1 ? '' : 's'} em estoque
-      </p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div role="tablist" aria-label="Filtrar por marcador" className="inline-flex w-fit rounded-lg border bg-muted/40 p-1">
+          {([
+            ['todos', 'Todos'],
+            ['preparacao', 'Preparação'],
+            ['patio', 'Pátio'],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={stageFilter === value}
+              onClick={() => setStageFilter(value)}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                stageFilter === value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground tabular-nums">
+          {total} veículo{total === 1 ? '' : 's'} em estoque
+        </p>
+      </div>
 
       {/* Dialog Criar/Editar */}
       <Dialog open={openDialog} onOpenChange={setOpenDialog}>
@@ -386,7 +449,9 @@ export function VehiclesList() {
           </DialogHeader>
           {soldVehicle && (() => {
             const saleVal = parseFloat(saleValue) || 0
-            const profit = saleVal - soldVehicle.purchase_value
+            const expenses = Number(soldVehicle.total_expenses) || 0
+            const totalCost = soldVehicle.purchase_value + expenses
+            const profit = saleVal - totalCost
             const isProfit = profit >= 0
 
             return (
@@ -417,11 +482,19 @@ export function VehiclesList() {
                 <div className="rounded-lg border divide-y text-sm">
                   <div className="flex justify-between items-center px-4 py-2.5">
                     <span className="text-muted-foreground">Valor de compra</span>
-                    <span className="font-medium">R$ {soldVehicle.purchase_value.toFixed(2)}</span>
+                    <span className="font-medium tabular-nums">{brl(soldVehicle.purchase_value)}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-4 py-2.5">
+                    <span className="text-muted-foreground">Gastos do veículo</span>
+                    <span className="font-medium tabular-nums text-red-600 dark:text-red-400">{brl(expenses)}</span>
+                  </div>
+                  <div className="flex justify-between items-center px-4 py-2.5 bg-muted/40">
+                    <span className="font-medium">Custo total</span>
+                    <span className="font-semibold tabular-nums">{brl(totalCost)}</span>
                   </div>
                   <div className="flex justify-between items-center px-4 py-2.5">
                     <span className="text-muted-foreground">Valor de venda</span>
-                    <span className="font-medium text-green-600">R$ {saleVal > 0 ? saleVal.toFixed(2) : '—'}</span>
+                    <span className="font-medium tabular-nums text-green-600">{saleVal > 0 ? brl(saleVal) : '—'}</span>
                   </div>
                   <div className={`flex justify-between items-center px-4 py-2.5 rounded-b-lg font-semibold ${isProfit ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
                     <span className="flex items-center gap-1.5">
@@ -430,16 +503,18 @@ export function VehiclesList() {
                         : <TrendingDown className="w-4 h-4 text-red-600" />
                       }
                       <span className={isProfit ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
-                        {isProfit ? 'Lucro estimado' : 'Prejuízo estimado'}
+                        {isProfit ? 'Lucro' : 'Prejuízo'}
                       </span>
                     </span>
                     <span className={isProfit ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
-                      {saleVal > 0 ? `${isProfit ? '+' : ''}R$ ${profit.toFixed(2)}` : '—'}
+                      {saleVal > 0 ? `${isProfit ? '+' : '-'}${brl(Math.abs(profit))}` : '—'}
                     </span>
                   </div>
                 </div>
 
-                <p className="text-xs text-muted-foreground">* O lucro real pode variar conforme os gastos registrados no veículo.</p>
+                <p className="text-xs text-muted-foreground">
+                  Lucro = valor de venda − (valor de compra + gastos registrados no veículo).
+                </p>
 
                 <div className="flex justify-end gap-2 pt-1">
                   <Button type="button" variant="outline" onClick={() => setSoldDialog(false)}>Cancelar</Button>
@@ -478,12 +553,33 @@ export function VehiclesList() {
                   {vehicle.type === 'carro' ? 'Carro' : 'Moto'}
                 </Badge>
               </div>
+              <div className="flex items-center gap-2 pt-2">
+                <span className="text-xs text-muted-foreground">Marcador:</span>
+                <Select
+                  value={vehicle.stage ?? 'preparacao'}
+                  onValueChange={(v) => handleChangeStage(vehicle, v as VehicleStage | 'vendido')}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    aria-label={`Marcador de ${vehicle.brand} ${vehicle.model}`}
+                    className={`h-7 gap-1.5 rounded-full border px-2.5 text-xs font-medium ${STAGE_META[vehicle.stage ?? 'preparacao'].className}`}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="preparacao">Preparação</SelectItem>
+                    <SelectItem value="patio">Pátio</SelectItem>
+                    <SelectItem value="vendido">Vendido</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent className="flex-1 space-y-2 px-4">
               <div className="text-xs space-y-0.5 text-muted-foreground">
                 {vehicle.version && <p><span className="font-medium text-foreground">Versão:</span> {vehicle.version}</p>}
                 <p><span className="font-medium text-foreground">Anos:</span> {vehicle.manufacture_year}/{vehicle.model_year}</p>
-                <p><span className="font-medium text-foreground">Compra:</span> R$ {(Number(vehicle.purchase_value) || 0).toFixed(2)}</p>
+                <p><span className="font-medium text-foreground">Compra:</span> {brl(Number(vehicle.purchase_value) || 0)}</p>
+                <p><span className="font-medium text-foreground">Gastos:</span> {brl(Number(vehicle.total_expenses) || 0)}</p>
                 <p><span className="font-medium text-foreground">RENAVAN:</span> {vehicle.renavam}</p>
                 <p><span className="font-medium text-foreground">Chassis:</span> <span className="font-mono">{vehicle.chassis}</span></p>
                 {vehicle.crv && <p><span className="font-medium text-foreground">CRV:</span> <span className="font-mono">{vehicle.crv}</span></p>}
