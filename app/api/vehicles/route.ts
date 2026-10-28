@@ -18,6 +18,7 @@ const vehicleSchema = z.object({
   chassis: z.string().min(1),
   crv: z.string().optional(),
   crv_security_code: z.string().optional(),
+  stage: z.enum(['preparacao', 'patio']).optional(),
 })
 
 async function getStoreId(request: NextRequest): Promise<number | null> {
@@ -49,12 +50,15 @@ export async function GET(request: NextRequest) {
     // Contratos podem ser gerados para veículos já marcados como vendidos,
     // então `?includeSold=1` remove o filtro de estoque.
     const includeSold = sp.get('includeSold') === '1'
+    const stageParam = sp.get('stage') ?? ''
+    const stage = ['preparacao', 'patio'].includes(stageParam) ? stageParam : ''
 
     const [countRows, vehicles] = await Promise.all([
       sql`
         SELECT COUNT(*)::int AS total
         FROM vehicles
         WHERE store_id = ${storeId} AND (${includeSold} OR status = 'em_estoque')
+          AND (${stage} = '' OR (status = 'em_estoque' AND stage = ${stage}))
           AND (
             ${search} = ''
             OR plate ILIKE ${like}
@@ -64,8 +68,13 @@ export async function GET(request: NextRequest) {
           )
       `,
       sql`
-        SELECT * FROM vehicles
+        SELECT v.*, COALESCE((
+          SELECT SUM(e.value) FROM vehicle_expenses e
+          WHERE e.vehicle_id = v.id AND e.is_deleted = false
+        ), 0) AS total_expenses
+        FROM vehicles v
         WHERE store_id = ${storeId} AND (${includeSold} OR status = 'em_estoque')
+          AND (${stage} = '' OR (status = 'em_estoque' AND stage = ${stage}))
           AND (
             ${search} = ''
             OR plate ILIKE ${like}
@@ -83,6 +92,7 @@ export async function GET(request: NextRequest) {
     const normalized = vehicles.map((v) => ({
       ...v,
       purchase_value: Number(v.purchase_value) || 0,
+      total_expenses: Number(v.total_expenses) || 0,
       manufacture_year: Number(v.manufacture_year),
       model_year: Number(v.model_year),
     }))
@@ -122,12 +132,12 @@ export async function POST(request: NextRequest) {
       INSERT INTO vehicles (
         store_id, type, plate, brand, model, version,
         manufacture_year, model_year, purchase_value, renavam, chassis,
-        crv, crv_security_code
+        crv, crv_security_code, stage
       ) VALUES (
         ${storeId}, ${data.type}, ${data.plate.toUpperCase()}, ${data.brand}, ${data.model},
         ${data.version || null}, ${data.manufacture_year}, ${data.model_year},
         ${data.purchase_value}, ${data.renavam}, ${data.chassis},
-        ${data.crv || null}, ${data.crv_security_code || null}
+        ${data.crv || null}, ${data.crv_security_code || null}, ${data.stage ?? 'preparacao'}
       )
       RETURNING *
     `

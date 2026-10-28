@@ -6,11 +6,12 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationsBell } from '@/components/dashboard/notifications-bell'
-import { Home, ShoppingCart, CheckCircle, LogOut, Users, FileSignature, WalletCards } from 'lucide-react'
+import { Home, Car, CheckCircle, LogOut, Users, FileSignature, WalletCards, ListTodo } from 'lucide-react'
 
 const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: Home },
-  { label: 'Gastos', href: '/gastos', icon: ShoppingCart },
+  { label: 'Veículos', href: '/veiculos', icon: Car },
+  { label: 'Lembretes', href: '/lembretes', icon: ListTodo },
   { label: 'Contas', href: '/contas', icon: WalletCards },
   { label: 'Vendidos', href: '/vendidos', icon: CheckCircle },
   { label: 'Clientes', href: '/clientes', icon: Users },

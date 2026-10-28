@@ -184,7 +184,7 @@ export async function DELETE(request: NextRequest) {
 
     const result = await sql`
       UPDATE vehicles
-      SET status = 'em_estoque', sale_value = NULL, sold_at = NULL, updated_at = NOW()
+      SET status = 'em_estoque', stage = 'patio', sale_value = NULL, sold_at = NULL, updated_at = NOW()
       WHERE id = ${vehicleId} AND store_id = ${storeId}
       RETURNING *
     `
