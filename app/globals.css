@@ -181,6 +181,9 @@
   .calendar-mark-paid::after {
     background-color: var(--color-emerald-500);
   }
+  .calendar-mark-receivable::after {
+    background-color: var(--color-sky-500);
+  }
   .calendar-mark-pending::after {
     background-color: var(--color-amber-500);
   }

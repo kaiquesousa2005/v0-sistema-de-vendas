@@ -14,6 +14,7 @@ export type AccountNotification = {
   category: string
   amount: number | string | null
   status: string
+  type?: 'pagar' | 'receber'
   due_date: string
   days_until: number
 }

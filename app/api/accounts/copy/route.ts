@@ -34,8 +34,8 @@ export async function POST(request: NextRequest) {
     const { ids, month, year } = copySchema.parse(await request.json())
     const sql = neon(process.env.DATABASE_URL!)
     const inserted = await sql`
-      INSERT INTO accounts_payable (store_id, description, category, due_date, amount, status, payment_date, notes)
-      SELECT src.store_id, src.description, src.category,
+      INSERT INTO accounts_payable (store_id, type, description, category, due_date, amount, status, payment_date, notes)
+      SELECT src.store_id, src.type, src.description, src.category,
         make_date(${year}::int, ${month}::int, LEAST(
           EXTRACT(DAY FROM src.due_date)::int,
           EXTRACT(DAY FROM (make_date(${year}::int, ${month}::int, 1) + INTERVAL '1 month - 1 day'))::int
@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
         AND NOT EXISTS (
           SELECT 1 FROM accounts_payable dst
           WHERE dst.store_id = src.store_id
+            AND dst.type = src.type
             AND dst.description = src.description
             AND dst.category = src.category
             AND EXTRACT(MONTH FROM dst.due_date) = ${month}

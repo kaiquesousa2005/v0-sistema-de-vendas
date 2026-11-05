@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       `,
       sql`
         WITH today AS (SELECT (NOW() AT TIME ZONE 'America/Sao_Paulo')::date AS d)
-        SELECT a.id, a.description, a.category, a.amount, a.status,
+        SELECT a.id, a.type, a.description, a.category, a.amount, a.status,
           to_char(a.due_date, 'YYYY-MM-DD') AS due_date,
           (a.due_date - today.d)::int AS days_until
         FROM accounts_payable a, today
