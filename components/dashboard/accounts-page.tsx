@@ -45,6 +45,10 @@ const statuses: Status[] = ['Pendente', 'Pago', 'Atrasado']
 
 const typeLabel: Record<AccountType, string> = { pagar: 'A pagar', receber: 'A receber' }
 
+type View = AccountType | 'todos'
+const viewLabel: Record<View, string> = { todos: 'Todas', pagar: 'A pagar', receber: 'A receber' }
+const viewOptions: View[] = ['todos', 'pagar', 'receber']
+
 /** "Pago" é armazenado igual para os dois tipos; para contas a receber exibimos "Recebido". */
 const statusLabel = (type: AccountType, status: Status) => (type === 'receber' && status === 'Pago' ? 'Recebido' : status)
 
@@ -106,6 +110,17 @@ function groupByCategory(accounts: Account[]): CategoryGroup[] {
     }))
 }
 
+/** Em "Todos", separa os grupos por tipo para não somar contas a pagar com contas a receber. */
+function groupForView(accounts: Account[], view: View): CategoryGroup[] {
+  if (view !== 'todos') return groupByCategory(accounts)
+  return (['pagar', 'receber'] as AccountType[]).flatMap((type) =>
+    groupByCategory(accounts.filter((a) => (a.type ?? 'pagar') === type)).map((g) => ({
+      ...g,
+      category: `${typeLabel[type]} · ${g.category}`,
+    })),
+  )
+}
+
 async function fetchAccounts(month: number, year: number) {
   const response = await fetch(`/api/accounts?month=${month}&year=${year}`)
   const data = await response.json()
@@ -113,11 +128,13 @@ async function fetchAccounts(month: number, year: number) {
   return data as { accounts: Account[]; totals: Totals }
 }
 
-function AccountsSheet({ groups, month, year, total, type }: { groups: CategoryGroup[]; month: number; year: number; total: number; type: AccountType }) {
+function AccountsSheet({ groups, month, year, total, type }: { groups: CategoryGroup[]; month: number; year: number; total: number; type: View }) {
   return (
     <div className="accounts-sheet w-[794px] bg-white p-10 text-slate-900">
       <img src="/images/contract-header.png" alt="MCar Veículos" className="mb-7 h-auto w-full" />
-      <h1 className="text-center text-xl font-bold uppercase">Contas {typeLabel[type].toLowerCase()}</h1>
+      <h1 className="text-center text-xl font-bold uppercase">
+        {type === 'todos' ? 'Contas a pagar e a receber' : `Contas ${typeLabel[type].toLowerCase()}`}
+      </h1>
       <p className="mb-6 text-center text-sm">Demonstrativo de {monthName(new Date(year, month - 1, 1))}</p>
       <table className="w-full border-collapse text-sm">
         <thead>
@@ -148,13 +165,15 @@ function AccountsSheet({ groups, month, year, total, type }: { groups: CategoryG
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={3} className="border p-3 text-right font-bold">TOTAL DO MÊS</td>
+            <td colSpan={3} className="border p-3 text-right font-bold">{type === 'todos' ? 'SALDO DO MÊS (A RECEBER − A PAGAR)' : 'TOTAL DO MÊS'}</td>
             <td className="border p-3 text-right font-bold">{money(total)}</td>
           </tr>
         </tfoot>
       </table>
       <div className="mt-24 grid grid-cols-2 gap-20 text-center text-xs">
-        <div className="border-t pt-2">{type === 'receber' ? 'RESPONSÁVEL PELO RECEBIMENTO' : 'RESPONSÁVEL PELO PAGAMENTO'}</div>
+        <div className="border-t pt-2">
+          {type === 'receber' ? 'RESPONSÁVEL PELO RECEBIMENTO' : type === 'pagar' ? 'RESPONSÁVEL PELO PAGAMENTO' : 'RESPONSÁVEL FINANCEIRO'}
+        </div>
         <div className="border-t pt-2">CONFERÊNCIA</div>
       </div>
     </div>
@@ -438,7 +457,7 @@ export function AccountsPage() {
   const [cursor, setCursor] = useState(new Date(now.getFullYear(), now.getMonth(), 1))
   const [accounts, setAccounts] = useState<Account[]>([])
   const [totals, setTotals] = useState<Totals>(emptyTotals)
-  const [view, setView] = useState<AccountType>('pagar')
+  const [view, setView] = useState<View>('todos')
   const [editing, setEditing] = useState<Account | null>(null)
   const [initialForm, setInitialForm] = useState<Form | null>(null)
   const [formOpen, setFormOpen] = useState(false)
@@ -469,18 +488,24 @@ export function AccountsPage() {
 
   useEffect(() => { setSelectedDay(null) }, [month, year])
 
-  const viewAccounts = useMemo(() => accounts.filter((a) => (a.type ?? 'pagar') === view), [accounts, view])
-  const groups = useMemo(() => groupByCategory(viewAccounts), [viewAccounts])
+  const viewAccounts = useMemo(
+    () => (view === 'todos' ? accounts : accounts.filter((a) => (a.type ?? 'pagar') === view)),
+    [accounts, view],
+  )
+  const groups = useMemo(() => groupForView(viewAccounts, view), [viewAccounts, view])
   const visibleGroups = useMemo(
-    () => (selectedDay ? groupByCategory(viewAccounts.filter((a) => a.due_date.slice(0, 10) === selectedDay)) : groups),
-    [viewAccounts, groups, selectedDay],
+    () => (selectedDay ? groupForView(viewAccounts.filter((a) => a.due_date.slice(0, 10) === selectedDay), view) : groups),
+    [viewAccounts, groups, selectedDay, view],
   )
   const dayAccounts = useMemo(
     () => (selectedDay ? accounts.filter((a) => a.due_date.slice(0, 10) === selectedDay) : []),
     [accounts, selectedDay],
   )
   const viewTotals = view === 'receber' ? totals.receivable : totals.payable
-  const countOf = (type: AccountType) => accounts.filter((a) => (a.type ?? 'pagar') === type).length
+  const sheetTotal = view === 'todos' ? totals.balance : viewTotals.total
+  const countOf = (type: View) =>
+    type === 'todos' ? accounts.length : accounts.filter((a) => (a.type ?? 'pagar') === type).length
+  const newAccountType: AccountType = view === 'todos' ? 'pagar' : view
 
   const calendarMarks = useMemo(() => {
     const today = todayKey()
@@ -501,7 +526,7 @@ export function AccountsPage() {
 
   const openNew = () => {
     setEditing(null)
-    setInitialForm({ type: view, description: '', category: 'Outros', due_date: selectedDay ?? firstDayOf(month, year), amount: '', status: 'Pendente', payment_date: null, notes: '' })
+    setInitialForm({ type: newAccountType, description: '', category: 'Outros', due_date: selectedDay ?? firstDayOf(month, year), amount: '', status: 'Pendente', payment_date: null, notes: '' })
     setFormOpen(true)
   }
 
@@ -535,7 +560,7 @@ export function AccountsPage() {
     setExporting(mode)
     try {
       const { downloadContractPdf, printContractPdf } = await import('@/lib/contract-pdf')
-      if (mode === 'pdf') await downloadContractPdf(node, `Contas ${typeLabel[view].toLowerCase()} - ${monthName(cursor)}`)
+      if (mode === 'pdf') await downloadContractPdf(node, `Contas ${view === 'todos' ? 'a pagar e a receber' : typeLabel[view].toLowerCase()} - ${monthName(cursor)}`)
       else await printContractPdf(node)
     } catch {
       toast.error('Não foi possível gerar o PDF')
@@ -695,7 +720,7 @@ export function AccountsPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div role="tablist" aria-label="Tipo de conta" className="inline-flex rounded-lg border bg-muted/40 p-1">
-          {(['pagar', 'receber'] as AccountType[]).map((type) => (
+          {viewOptions.map((type) => (
             <button
               key={type}
               type="button"
@@ -706,14 +731,22 @@ export function AccountsPage() {
                 view === type ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {type === 'pagar' ? <ArrowUpCircle className="h-4 w-4 text-red-500" /> : <ArrowDownCircle className="h-4 w-4 text-emerald-500" />}
-              {typeLabel[type]}
+              {type === 'todos' ? (
+                <Wallet className="h-4 w-4 text-primary" />
+              ) : type === 'pagar' ? (
+                <ArrowUpCircle className="h-4 w-4 text-red-500" />
+              ) : (
+                <ArrowDownCircle className="h-4 w-4 text-emerald-500" />
+              )}
+              {viewLabel[type]}
               <span className="rounded-full bg-muted px-1.5 text-xs">{countOf(type)}</span>
             </button>
           ))}
         </div>
         <span className="text-sm text-muted-foreground">
-          {view === 'receber' ? 'Recebido' : 'Pago'} {money(viewTotals.paid)} · Pendente {money(viewTotals.pending)}
+          {view === 'todos'
+            ? `A pagar ${money(totals.payable.total)} · A receber ${money(totals.receivable.total)}`
+            : `${view === 'receber' ? 'Recebido' : 'Pago'} ${money(viewTotals.paid)} · Pendente ${money(viewTotals.pending)}`}
         </span>
       </div>
 
@@ -735,13 +768,13 @@ export function AccountsPage() {
           ) : viewAccounts.length === 0 ? (
             <div className="p-12 text-center text-muted-foreground">
               <Wallet className="mx-auto mb-3 h-10 w-10 opacity-50" />
-              <p>Nenhuma conta {typeLabel[view].toLowerCase()} cadastrada neste mês.</p>
+              <p>Nenhuma conta {view === 'todos' ? '' : `${typeLabel[view].toLowerCase()} `}cadastrada neste mês.</p>
               <div className="mt-4 flex flex-wrap justify-center gap-2">
                 <Button variant="outline" onClick={() => setCopyOpen(true)}>
                   <Copy className="mr-2 h-4 w-4" />
                   Importar do mês anterior
                 </Button>
-                <Button onClick={openNew}>Cadastrar conta {typeLabel[view].toLowerCase()}</Button>
+                <Button onClick={openNew}>Cadastrar conta {typeLabel[newAccountType].toLowerCase()}</Button>
               </div>
             </div>
           ) : (
@@ -806,7 +839,7 @@ export function AccountsPage() {
       <CopyPreviousMonthDialog open={copyOpen} onOpenChange={setCopyOpen} month={month} year={year} onCopied={load} />
 
       <div ref={sheetRef} aria-hidden className="pointer-events-none fixed left-[-10000px] top-0">
-        <AccountsSheet groups={groups} month={month} year={year} total={viewTotals.total} type={view} />
+        <AccountsSheet groups={groups} month={month} year={year} total={sheetTotal} type={view} />
       </div>
     </div>
   )
