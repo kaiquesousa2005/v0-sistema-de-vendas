@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationsBell } from '@/components/dashboard/notifications-bell'
+import { useOpenReminders } from '@/hooks/use-open-reminders'
 import { Home, Car, CheckCircle, LogOut, Users, FileSignature, WalletCards, ListTodo } from 'lucide-react'
 
 const navItems = [
@@ -22,6 +23,30 @@ export function Header() {
   const router = useRouter()
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
+  const openReminders = useOpenReminders()
+
+  const renderLabel = (item: (typeof navItems)[number]) => {
+    const showDot = item.href === '/lembretes' && openReminders > 0
+    return (
+      <>
+        <span className="relative inline-flex">
+          <item.icon className="w-4 h-4" />
+          {showDot && (
+            <span
+              aria-hidden="true"
+              className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background"
+            />
+          )}
+        </span>
+        {item.label}
+        {showDot && (
+          <span className="sr-only">
+            {` (${openReminders} ${openReminders === 1 ? 'lembrete em aberto' : 'lembretes em aberto'})`}
+          </span>
+        )}
+      </>
+    )
+  }
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -49,8 +74,7 @@ export function Header() {
                     size="sm"
                     className="gap-2"
                   >
-                    <item.icon className="w-4 h-4" />
-                    {item.label}
+                    {renderLabel(item)}
                   </Button>
                 </Link>
               )
@@ -84,8 +108,7 @@ export function Header() {
                     size="sm"
                     className="w-full justify-start gap-2"
                   >
-                    <item.icon className="w-4 h-4" />
-                    {item.label}
+                    {renderLabel(item)}
                   </Button>
                 </Link>
               )

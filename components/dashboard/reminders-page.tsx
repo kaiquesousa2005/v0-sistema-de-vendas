@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import useSWR from 'swr'
+import useSWR, { mutate as globalMutate } from 'swr'
+import { OPEN_REMINDERS_KEY } from '@/hooks/use-open-reminders'
 import { toast } from 'sonner'
 import { Cake, Car, CheckCircle2, Circle, Edit, Loader2, MessageCircle, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -108,6 +109,7 @@ export function RemindersPage() {
       toast.success(editing ? 'Lembrete atualizado' : 'Lembrete criado')
       setDialogOpen(false)
       mutate()
+      globalMutate(OPEN_REMINDERS_KEY)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Erro ao salvar lembrete')
     } finally {
@@ -126,6 +128,7 @@ export function RemindersPage() {
       if (!res.ok) throw new Error((await res.json()).error)
       toast.success(next === 'finalizado' ? 'Tarefa finalizada' : 'Tarefa reaberta')
       mutate()
+      globalMutate(OPEN_REMINDERS_KEY)
     } catch (error) {
       toast.error(error instanceof Error && error.message ? error.message : 'Erro ao atualizar lembrete')
     }
@@ -138,6 +141,7 @@ export function RemindersPage() {
       if (!res.ok) throw new Error()
       toast.success('Lembrete excluído')
       mutate()
+      globalMutate(OPEN_REMINDERS_KEY)
     } catch {
       toast.error('Erro ao excluir lembrete')
     }
