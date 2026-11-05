@@ -46,7 +46,7 @@ function AccountItem({ account }: { account: AccountNotification }) {
         <span className="min-w-0">
           <span className="block truncate font-medium">{account.description}</span>
           <span className="text-xs text-muted-foreground">
-            {dueLabel(account.days_until)} · {formatDate(account.due_date)}
+            {account.type === 'receber' ? 'A receber · ' : ''}{dueLabel(account.days_until)} · {formatDate(account.due_date)}
           </span>
         </span>
         <span className="shrink-0 text-xs font-semibold">{money(account.amount)}</span>
