@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
       `,
       sql`
         SELECT
-          id, full_name, birth_date, phone, email, rg, cpf,
+          id, full_name, to_char(birth_date, 'YYYY-MM-DD') AS birth_date, phone, email, rg, cpf,
           address_street, address_number, address_complement,
           address_neighborhood, address_city, address_state, address_zip,
           (cnh_pathname IS NOT NULL) AS has_cnh,

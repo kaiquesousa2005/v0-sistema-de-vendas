@@ -70,7 +70,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const result = await sql`
       UPDATE customers SET
         full_name = ${data.full_name ?? c.full_name},
-        birth_date = ${data.birth_date ?? c.birth_date},
+        birth_date = COALESCE(${data.birth_date ?? null}::date, birth_date),
         phone = ${data.phone ?? c.phone},
         email = ${data.email !== undefined ? (data.email || null) : c.email},
         rg = ${data.rg ?? c.rg},
