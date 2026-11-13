@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ThemeToggle } from '@/components/theme-toggle'
 import { NotificationsBell } from '@/components/dashboard/notifications-bell'
 import { useOpenReminders } from '@/hooks/use-open-reminders'
+import { useScheduledInspections } from '@/hooks/use-scheduled-inspections'
 import { useStore } from '@/hooks/use-store'
 import { useSidebarCollapsed } from '@/hooks/use-sidebar-collapsed'
 import { cn } from '@/lib/utils'
@@ -65,6 +66,18 @@ function Brand({ compact = false }: { compact?: boolean }) {
 function SidebarNav({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname()
   const openReminders = useOpenReminders()
+  const scheduledInspections = useScheduledInspections()
+
+  const dotLabels: Record<string, string | null> = {
+    '/lembretes':
+      openReminders > 0
+        ? `${openReminders} ${openReminders === 1 ? 'lembrete em aberto' : 'lembretes em aberto'}`
+        : null,
+    '/transferencias':
+      scheduledInspections > 0
+        ? `${scheduledInspections} ${scheduledInspections === 1 ? 'vistoria agendada' : 'vistorias agendadas'}`
+        : null,
+  }
 
   return (
     <nav
@@ -73,7 +86,8 @@ function SidebarNav({ collapsed = false, onNavigate }: { collapsed?: boolean; on
     >
       {navItems.map((item) => {
         const isActive = pathname.startsWith(item.href)
-        const showDot = item.href === '/lembretes' && openReminders > 0
+        const dotLabel = dotLabels[item.href] ?? null
+        const showDot = dotLabel !== null
         const link = (
           <Link
             href={item.href}
@@ -100,9 +114,7 @@ function SidebarNav({ collapsed = false, onNavigate }: { collapsed?: boolean; on
             </span>
             {!collapsed && <span className="w-full truncate text-center">{item.label}</span>}
             {showDot && (
-              <span className="sr-only">
-                {` (${openReminders} ${openReminders === 1 ? 'lembrete em aberto' : 'lembretes em aberto'})`}
-              </span>
+              <span className="sr-only">{` (${dotLabel})`}</span>
             )}
           </Link>
         )
