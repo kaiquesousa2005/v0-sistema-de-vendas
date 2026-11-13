@@ -1,7 +1,7 @@
 import { VehicleExpenses } from '@/components/dashboard/vehicle-expenses'
 
 export const metadata = {
-  title: 'Gastos do Veículo - AutoGest',
+  title: 'Gastos do Veículo - KM Gestão',
   description: 'Gerenciar gastos de um veículo específico',
 }
 

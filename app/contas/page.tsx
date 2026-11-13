@@ -2,7 +2,7 @@ import { Header } from '@/components/dashboard/header'
 import { AccountsPage } from '@/components/dashboard/accounts-page'
 
 export const metadata = {
-  title: 'Contas a pagar - AutoGest',
+  title: 'Contas a pagar - KM Gestão',
   description: 'Organize e acompanhe as contas a pagar por mês.',
 }
 

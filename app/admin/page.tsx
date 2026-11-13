@@ -2,7 +2,7 @@ import { Header } from '@/components/dashboard/header'
 import { AdminPanel } from '@/components/admin/admin-panel'
 
 export const metadata = {
-  title: 'Painel de Administração - AutoGest',
+  title: 'Painel de Administração - KM Gestão',
   description: 'Gerenciar lojas e usuários',
 }
 

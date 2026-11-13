@@ -1,7 +1,7 @@
 import { SoldVehiclesList } from '@/components/dashboard/sold-vehicles-list'
 
 export const metadata = {
-  title: 'Vendidos - AutoGest',
+  title: 'Vendidos - KM Gestão',
   description: 'Ver veículos vendidos',
 }
 

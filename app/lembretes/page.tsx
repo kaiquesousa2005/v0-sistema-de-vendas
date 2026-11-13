@@ -2,7 +2,7 @@ import { Header } from '@/components/dashboard/header'
 import { RemindersPage } from '@/components/dashboard/reminders-page'
 
 export const metadata = {
-  title: 'Lembretes - AutoGest',
+  title: 'Lembretes - KM Gestão',
   description: 'Lembretes de veículos e próximos aniversários de clientes',
 }
 

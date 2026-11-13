@@ -8,7 +8,7 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'AutoGest - Sistema de Gestao de Veiculos',
+  title: 'KM Gestão - Sistema de Gestao de Veiculos',
   description: 'Sistema completo para gestao de lojas de veiculos, controle de estoque, gastos e vendas.',
   generator: 'v0.app',
   icons: {
@@ -44,6 +44,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(localStorage.getItem('km-sidebar')==='collapsed')document.documentElement.dataset.sidebar='collapsed'}catch(e){}`,
+          }}
+        />
+      </head>
       <body className={`${inter.className} antialiased`}>
         <ThemeProvider
           attribute="class"

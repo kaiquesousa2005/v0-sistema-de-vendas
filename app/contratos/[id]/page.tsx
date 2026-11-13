@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { ContractView } from '@/components/dashboard/contract-view'
 
 export const metadata = {
-  title: 'Contrato - AutoGest',
+  title: 'Contrato - KM Gestão',
   description: 'Visualizar e imprimir contrato',
 }
 

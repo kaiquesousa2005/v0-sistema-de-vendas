@@ -1,7 +1,7 @@
 import { ContractsList } from '@/components/dashboard/contracts-list'
 
 export const metadata = {
-  title: 'Contratos - AutoGest',
+  title: 'Contratos - KM Gestão',
   description: 'Criar e gerenciar contratos de venda, devolução, repasse, consignação e sinal',
 }
 
