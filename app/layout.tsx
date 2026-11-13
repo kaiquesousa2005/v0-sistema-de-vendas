@@ -10,23 +10,14 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'KM Gestão - Sistema de Gestao de Veiculos',
   description: 'Sistema completo para gestao de lojas de veiculos, controle de estoque, gastos e vendas.',
-  generator: 'v0.app',
+  applicationName: 'KM Gestão',
   icons: {
     icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
+      { url: '/icon.svg?v=2', type: 'image/svg+xml' },
+      { url: '/apple-icon.png?v=2', type: 'image/png', sizes: '1024x1024' },
     ],
-    apple: '/apple-icon.png',
+    shortcut: '/icon.svg?v=2',
+    apple: '/apple-icon.png?v=2',
   },
 }
 
