@@ -191,3 +191,15 @@
     background-color: var(--color-red-500);
   }
 }
+
+/* Reserva o espaço da sidebar fixa em qualquer página que renderize o Header. */
+@media (min-width: 768px) {
+  :where(div):has(> [data-app-header]) {
+    padding-left: 16rem;
+  }
+}
+@media print {
+  :where(div):has(> [data-app-header]) {
+    padding-left: 0;
+  }
+}

@@ -76,7 +76,7 @@ export default function LoginPage() {
               AG
             </div>
           </div>
-          <CardTitle className="text-2xl">AutoGest</CardTitle>
+          <CardTitle className="text-2xl">KM Gestão</CardTitle>
           <CardDescription>
             {isAdmin ? 'Painel do Administrador' : 'Sistema de Gestão de Veículos'}
           </CardDescription>

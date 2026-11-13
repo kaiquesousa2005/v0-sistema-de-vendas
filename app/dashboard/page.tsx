@@ -2,7 +2,7 @@ import { Header } from '@/components/dashboard/header'
 import { DashboardOverview } from '@/components/dashboard/dashboard-overview'
 
 export const metadata = {
-  title: 'Dashboard - AutoGest',
+  title: 'Dashboard - KM Gestão',
   description: 'Visão geral de vendas, gastos, estoque e lucros',
 }
 

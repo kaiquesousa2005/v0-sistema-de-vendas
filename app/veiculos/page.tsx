@@ -2,7 +2,7 @@ import { Header } from '@/components/dashboard/header'
 import { VehiclesList } from '@/components/dashboard/vehicles-list'
 
 export const metadata = {
-  title: 'Veículos - AutoGest',
+  title: 'Veículos - KM Gestão',
   description: 'Gerenciar veículos em estoque, marcadores e gastos',
 }
 
