@@ -133,9 +133,7 @@ export function ContractView({ contractId }: { contractId: number }) {
 
   return (
     <div className="min-h-screen bg-muted/40 print:bg-white">
-      <div className="print:hidden">
-        <Header />
-      </div>
+      <Header />
 
       {/* Barra de ações — oculta na impressão */}
       <div className="border-b border-border bg-background print:hidden">

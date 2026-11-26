@@ -48,6 +48,8 @@ export function FitToWidth({ children }: { children: ReactNode }) {
         data-fit-to-width=""
         style={{
           width: SHEET_WIDTH_PX,
+          // Centraliza quando sobra espaço; com scale < 1 a folha ocupa toda a largura
+          marginInline: scale === 1 ? 'auto' : undefined,
           transform: `scale(${scale})`,
           transformOrigin: 'top left',
         }}
